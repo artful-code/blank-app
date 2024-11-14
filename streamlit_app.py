@@ -3,47 +3,22 @@ import pandas as pd
 from groq import Groq
 from io import BytesIO
 
-# Initialize the Groq client with the API key directly
+# Initialize the Groq client with the API key from Streamlit secrets
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
 # Define the system prompt to expect JSON output with strict categories
 def create_system_prompt():
     return """
-You are an expert accountant responsible for accurately categorizing bank transactions and extracting vendor/customer names according to strict criteria. For each transaction, provide a JSON output in the following format:
+    You are an expert accountant responsible for accurately categorizing bank transactions and extracting vendor/customer names according to strict criteria. For each transaction, provide a JSON output in the following format:
 
 {
     "Vendor/Customer": "<Extracted name or entity involved in the transaction>",
     "Category": "<One category from the strictly defined list below>",
     "Explanation": "<Brief reasoning for the chosen category based on the description, Cr/Dr indicator, and narration if provided>"
 }
+    """
 
-Categories:
-- Land & Building
-- Furniture
-- Computer
-- Loan to Director
-- Sale of Goods/Services
-- Interest Income
-- Other Income (including Dividend Income)
-- Cost of Services / Cost of Sales
-- Salaries and Wages
-- Bank Charges
-- Interest Expenses
-- Director Remuneration
-- Professional Charges
-- Rental & Accommodation Expense
-- Repairs & Maintenance
-- Travelling Expenses
-- Telephone Expense
-- Capital Infusion
-- Loan from Bank
-- Loan from Director
-- GST Payment
-- TDS Payment
-
-Do not use any other category names or modify these categories in any way.
-"""
-
+# Define the user prompt with strict categorization guidelines
 # Define the user prompt with strict categorization guidelines
 def create_user_prompt(description, cr_dr_indicator, narration=None):
     prompt = f"""
@@ -126,10 +101,13 @@ def classify_transaction_llm(row, with_narration):
         response_format={"type": "json_object"},
     )
 
+    # Print raw output from Groq for debugging
+    st.write("Raw API Response:", completion)
+
     # Parse the JSON response
     response = completion.choices[0].message.content
     try:
-        response_dict = response  # Assuming response is already a dict
+        response_dict = response
         if isinstance(response_dict, dict):
             return {
                 "Vendor/Customer": response_dict.get("Vendor/Customer", ""),
@@ -175,34 +153,35 @@ def main():
 
         # Verify that the required columns are present
         if all(col in df.columns for col in required_columns):
-            # Apply the LLM on each row and store results
-            results = []
-            progress_bar = st.progress(0)
-            for idx, row in df.iterrows():
-                result = classify_transaction_llm(row, with_narration)
-                results.append(result)
-                progress_bar.progress((idx + 1) / len(df))
-            progress_bar.empty()
+            # Add a Start Processing button
+            if st.button("Start Processing"):
+                # Apply the LLM on each row and store results
+                results = []
+                progress_bar = st.progress(0)
+                for idx, row in df.iterrows():
+                    result = classify_transaction_llm(row, with_narration)
+                    results.append(result)
+                    progress_bar.progress((idx + 1) / len(df))
+                progress_bar.empty()
 
-            # Convert results into separate columns in the DataFrame
-            df["Vendor/Customer"] = [res["Vendor/Customer"] for res in results]
-            df["Category"] = [res["Category"] for res in results]
-            df["Explanation"] = [res["Explanation"] for res in results]
+                # Convert results into separate columns in the DataFrame
+                df["Vendor/Customer"] = [res["Vendor/Customer"] for res in results]
+                df["Category"] = [res["Category"] for res in results]
+                df["Explanation"] = [res["Explanation"] for res in results]
 
-            # Download link for the updated sheet
-            st.write("## Download the updated sheet with classifications")
-            # Create a BytesIO buffer and write the Excel file into it
-            excel_buffer = BytesIO()
-            df.to_excel(excel_buffer, index=False)
-            excel_buffer.seek(0)
-            st.download_button(
-                label="Download Excel",
-                data=excel_buffer,
-                file_name="classified_bank_statement.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+                # Download link for the updated sheet
+                st.write("## Download the updated sheet with classifications")
+                excel_buffer = BytesIO()
+                df.to_excel(excel_buffer, index=False)
+                excel_buffer.seek(0)
+                st.download_button(
+                    label="Download Excel",
+                    data=excel_buffer,
+                    file_name="classified_bank_statement.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
         else:
-            st.error(f"Required columns {required_columns} not found in the uploaded file.")
+            st.error(f"Required columns {required_columns} not found in uploaded file.")
     else:
         st.info("Please upload an Excel or CSV file to proceed.")
 
