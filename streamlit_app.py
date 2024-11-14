@@ -16,6 +16,31 @@ You are an expert accountant responsible for accurately categorizing bank transa
     "Explanation": "<Brief reasoning for the chosen category based on the description, Cr/Dr indicator, and narration if provided>"
 }
 
+Categories:
+- Land & Building
+- Furniture
+- Computer
+- Loan to Director
+- Sale of Goods/Services
+- Interest Income
+- Other Income (including Dividend Income)
+- Cost of Services / Cost of Sales
+- Salaries and Wages
+- Bank Charges
+- Interest Expenses
+- Director Remuneration
+- Professional Charges
+- Rental & Accommodation Expense
+- Repairs & Maintenance
+- Travelling Expenses
+- Telephone Expense
+- Capital Infusion
+- Loan from Bank
+- Loan from Director
+- GST Payment
+- TDS Payment
+
+Do not use any other category names or modify these categories in any way.
 """
 
 # Define the user prompt with strict categorization guidelines
@@ -23,7 +48,7 @@ def create_user_prompt(description, cr_dr_indicator, narration=None):
     prompt = f"""
 Task: You are an expert accountant. I need your help categorizing bank transactions from a bank statement into predefined accounting categories. Each transaction contains the following details: transaction ID, value date, transaction posted date, description, Cr/Dr indicator (credit or debit), transaction amount, and available balance. Here’s what I need you to do:
 
-1. **Classify Each Transaction**: Based on the available information, classify each transaction into one of the following categories. Use only these categories without modification:
+1. Classify Each Transaction: Based on the available information, classify each transaction into one of the following categories. Use only these categories without modification:
    - Land & Building
    - Furniture
    - Computer
@@ -46,29 +71,28 @@ Task: You are an expert accountant. I need your help categorizing bank transacti
    - Loan from Director
    - GST Payment
    - TDS Payment
-   
+
    **Only one category should be assigned per transaction.**
 
-2. **Extract Vendor/Customer Name**: If the description contains an indication of a vendor or customer name, extract and display it. Common patterns include "ReqPay," "IMPS," or explicit names.
+2. Extract Vendor/Customer Name: If the description contains an indication of a vendor or customer name, extract and display it. Common patterns include "ReqPay," "IMPS," or explicit names.
 
-3. **Use Credit/Debit Indicator**: Use the Cr/Dr indicator to aid in classification:
+3. Use Credit/Debit Indicator: Use the Cr/Dr indicator to aid in classification:
    - "CR" (credit) transactions may indicate income, refunds, or capital infusion.
    - "DR" (debit) transactions may suggest expenses, loan repayments, or outgoing payments.
 
-4. **Infer Category Based on Keywords**:
-   - **Land & Building, Furniture, Computer**: Keywords like "purchase" or asset references suggest these categories.
-   - **Loans and Infusions**: Terms like "loan" and mentions of directors or banks indicate "Loan to Director," "Loan from Bank," or "Loan from Director."
-   - **Sales and Income**: Credits labeled "interest" or "sales" imply "Interest Income" or "Sale of Goods/Services."
-   - **Operational Costs**: Debits related to services or costs imply "Cost of Services / Cost of Sales."
-   - **Employee-Related**: "Salary" or "wage" suggests "Salaries and Wages"; "bonus" implies "Director Remuneration."
-   - **Professional Services**: "Consulting" or "professional" expenses indicate "Professional Charges."
-   - **Recurring Expenses**: Words like "rent," "repair," or "travel" map to categories such as "Rental & Accommodation Expense" or "Repairs & Maintenance."
-   - **Tax Payments**: Explicit labels like "GST" or "TDS" should be classified as "GST Payment" or "TDS Payment."
+4. Infer Category Based on Keywords:
+   - Land & Building, Furniture, Computer: Keywords like "purchase" or asset references suggest these categories.
+   - Loans and Infusions: Terms like "loan" and mentions of directors or banks indicate "Loan to Director," "Loan from Bank," or "Loan from Director."
+   - Sales and Income: Credits labeled "interest" or "sales" imply "Interest Income" or "Sale of Goods/Services."
+   - Operational Costs: Debits related to services or costs imply "Cost of Services / Cost of Sales."
+   - Employee-Related: "Salary" or "wage" suggests "Salaries and Wages"; "bonus" implies "Director Remuneration."
+   - Professional Services: "Consulting" or "professional" expenses indicate "Professional Charges."
+   - Recurring Expenses: Words like "rent," "repair," or "travel" map to categories such as "Rental & Accommodation Expense" or "Repairs & Maintenance."
+   - Tax Payments: Explicit labels like "GST" or "TDS" should be classified as "GST Payment" or "TDS Payment."
 
-5. **Handle Unclear Entries**: If the information in the row is insufficient for a clear categorization, make the best possible guess or label it as "Unclassified."
+5. Handle Unclear Entries: If the information in the row is insufficient for a clear categorization, make the best possible guess or label it as "Unclassified."
 
-6. **Provide Explanations**: For each classified transaction, give a brief explanation justifying the categorization based on the description, Cr/Dr indicator, and any keywords or patterns used.
-
+6. Provide Explanations: For each classified transaction, give a brief explanation justifying the categorization based on the description, Cr/Dr indicator, and any keywords or patterns used.
 
 Transaction Details:
 - Description: {description}
@@ -102,9 +126,19 @@ def classify_transaction_llm(row, with_narration):
     )
 
     # Parse the JSON response
-    result = completion.choices[0].message
-
-    return result
+    response = completion.choices[0].message
+    if isinstance(response, dict):
+        return {
+            "Vendor/Customer": response.get("Vendor/Customer", ""),
+            "Category": response.get("Category", ""),
+            "Explanation": response.get("Explanation", "")
+        }
+    else:
+        return {
+            "Vendor/Customer": "",
+            "Category": "",
+            "Explanation": ""
+        }
 
 # Streamlit app
 st.title("Bank Statement Classifier with LLM Integration")
@@ -137,9 +171,9 @@ if uploaded_file:
             results.append(result)
 
         # Convert results into separate columns in the DataFrame
-        df["Vendor/Customer"] = [res.get("Vendor/Customer") for res in results]
-        df["Category"] = [res.get("Category") for res in results]
-        df["Explanation"] = [res.get("Explanation") for res in results]
+        df["Vendor/Customer"] = [res["Vendor/Customer"] for res in results]
+        df["Category"] = [res["Category"] for res in results]
+        df["Explanation"] = [res["Explanation"] for res in results]
 
         # Download link for the updated sheet
         st.write("## Download the updated sheet with classifications")
