@@ -188,8 +188,7 @@ def classify_transaction_llm(row, with_narration):
         response_format={"type": "json_object"},
     )
 
-    # Print raw output from Groq for debugging
-    st.write("Raw API Response:", completion)
+   
 
     # Parse the JSON response
     response_content = completion.choices[0].message.content  # Extract content from response
@@ -214,7 +213,7 @@ def classify_transaction_llm(row, with_narration):
 
 # Streamlit app
 def main():
-    st.title("Bank Statement Classifier with LLM Integration")
+    st.title("Bank Statement Classifier")
 
     # File upload
     uploaded_file = st.file_uploader("Upload an Excel or CSV file", type=["xlsx", "csv"])
