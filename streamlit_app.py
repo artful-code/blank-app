@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from groq import Groq
 from io import BytesIO
+import json
 
 # Initialize the Groq client with the API key from Streamlit secrets
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
@@ -13,7 +14,7 @@ def create_system_prompt():
 
 {
     "Vendor/Customer": "<Extracted name or entity involved in the transaction>",
-    "Category": "<One category from the strictly defined list below>",
+    "Category": "<One category from the strictly defined list in user prompt>",
     "Explanation": "<Brief reasoning for the chosen category based on the description, Cr/Dr indicator, and narration if provided>"
 }
     """
@@ -105,28 +106,25 @@ def classify_transaction_llm(row, with_narration):
     st.write("Raw API Response:", completion)
 
     # Parse the JSON response
-    response = completion.choices[0].message.content
+    response_content = completion.choices[0].message.content  # Extract content from response
     try:
-        response_dict = response
-        if isinstance(response_dict, dict):
-            return {
-                "Vendor/Customer": response_dict.get("Vendor/Customer", ""),
-                "Category": response_dict.get("Category", ""),
-                "Explanation": response_dict.get("Explanation", "")
-            }
-        else:
-            return {
-                "Vendor/Customer": "",
-                "Category": "",
-                "Explanation": ""
-            }
-    except Exception as e:
-        st.error(f"Error parsing response: {e}")
+        # The content is a JSON string, so we need to parse it
+        response_dict = json.loads(response_content)
+        
+        # Extract fields from the parsed JSON
+        return {
+            "Vendor/Customer": response_dict.get("Vendor/Customer", ""),
+            "Category": response_dict.get("Category", ""),
+            "Explanation": response_dict.get("Explanation", "")
+        }
+    except json.JSONDecodeError as e:
+        st.error(f"Error decoding JSON content: {e}")
         return {
             "Vendor/Customer": "",
             "Category": "",
             "Explanation": ""
         }
+
 
 # Streamlit app
 def main():
