@@ -4,7 +4,7 @@ from groq import Groq
 from io import BytesIO
 
 # Initialize the Groq client with the API key directly
-client = Groq(api_key="your_api_key_here")  # Replace with your actual API key
+client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
 # Define the system prompt to expect JSON output with strict categories
 def create_system_prompt():
