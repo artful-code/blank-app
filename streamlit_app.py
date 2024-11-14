@@ -23,54 +23,55 @@ def create_system_prompt():
 # Define the user prompt with strict categorization guidelines
 def create_user_prompt(description, cr_dr_indicator, narration=None):
     prompt = f"""
-Task: You are an expert accountant. I need your help categorizing bank transactions from a bank statement into predefined accounting categories. Each transaction contains the following details: transaction ID, value date, transaction posted date, description, Cr/Dr indicator (credit or debit), transaction amount, and available balance. Here’s what I need you to do:
+TYou are an expert accountant. I need your help categorizing bank transactions from a bank statement into predefined accounting categories. Each transaction contains the following details: transaction ID, value date, transaction posted date, description, Cr/Dr indicator (credit or debit), transaction amount, and available balance. Here’s what I need you to do:
 
-1. **Classify Each Transaction**: Based on the available information, classify each transaction into one of the following categories. Use only these categories without modification:
-   - Land & Building
-   - Furniture
-   - Computer
-   - Loan to Director
-   - Sale of Goods/Services
-   - Interest Income
-   - Other Income (including Dividend Income)
-   - Cost of Services / Cost of Sales
-   - Salaries and Wages
-   - Bank Charges
-   - Interest Expenses
-   - Director Remuneration
-   - Professional Charges
-   - Rental & Accommodation Expense
-   - Repairs & Maintenance
-   - Travelling Expenses
-   - Telephone Expense
-   - Capital Infusion
-   - Loan from Bank
-   - Loan from Director
-   - GST Payment
-   - TDS Payment
+Classify Each Transaction: Based on the available information, classify each transaction into one of the following categories. Use only these categories without modification:
 
-   **Only one category should be assigned per transaction.**
+Land & Building
+Furniture
+Computer
+Loan to Director
+Sale of Goods/Services
+Interest Income
+Other Income (including Dividend Income)
+Cost of Services / Cost of Sales
+Salaries and Wages
+Bank Charges
+Interest Expenses
+Director Remuneration
+Professional Charges
+Rental & Accommodation Expense
+Repairs & Maintenance
+Travelling Expenses
+Telephone Expense
+Capital Infusion
+Loan from Bank
+Loan from Director
+GST Payment
+TDS Payment
+Only one category should be assigned per transaction.
 
-2. **Extract Vendor/Customer Name**: If the description contains an indication of a vendor or customer name, extract and display it. Common patterns include "ReqPay," "IMPS," or explicit names.
+Understand Description and/or Narration: Use your understanding of the description and/or narration (whichever is provided) to accurately determine the transaction's category. While keywords can be helpful, it is not necessary to rely solely on them. Focus on the overall context and meaning to ensure accurate classification.
 
-3. **Use Credit/Debit Indicator**: Use the Cr/Dr indicator to aid in classification:
-   - "CR" (credit) transactions may indicate income, refunds, or capital infusion.
-   - "DR" (debit) transactions may suggest expenses, loan repayments, or outgoing payments.
+Extract Vendor/Customer Name from Description Only: If the description contains an indication of a vendor or customer name, extract and display it. Do not infer the vendor/customer name from any other field.
 
-4. **Infer Category Based on Keywords**:
-   - **Assets**: Keywords like "purchase" or asset references suggest categories like "Land & Building," "Furniture," or "Computer."
-   - **Loans and Infusions**: Terms like "loan" and mentions of directors or banks indicate "Loan to Director," "Loan from Bank," or "Loan from Director."
-   - **Sales and Income**: Credits labeled "interest" or "sales" imply "Interest Income" or "Sale of Goods/Services."
-   - **Operational Costs**: Debits related to services or costs imply "Cost of Services / Cost of Sales."
-   - **Employee-Related**: "Salary" or "wage" suggests "Salaries and Wages"; "bonus" implies "Director Remuneration."
-   - **Professional Services**: "Consulting" or "professional" expenses indicate "Professional Charges."
-   - **Recurring Expenses**: Words like "rent," "repair," or "travel" map to categories such as "Rental & Accommodation Expense" or "Repairs & Maintenance."
-   - **Tax Payments**: Explicit labels like "GST" or "TDS" should be classified as "GST Payment" or "TDS Payment."
+Use Credit/Debit Indicator: Use the Cr/Dr indicator to aid in classification:
 
-5. **Handle Unclear Entries**: If the information in the row is insufficient for a clear categorization, make the best possible guess or label it as "Unclassified."
+"CR" (credit) transactions may indicate income, refunds, or capital infusion.
+"DR" (debit) transactions may suggest expenses, loan repayments, or outgoing payments.
+Infer Category Based on Overall Context:
 
-6. **Provide Explanations**: For each classified transaction, give a brief explanation justifying the categorization based on the description, Cr/Dr indicator, and any keywords or patterns used.
+Assets: Keywords like "purchase" or asset references suggest categories like "Land & Building," "Furniture," or "Computer."
+Loans and Infusions: Terms like "loan" and mentions of directors or banks indicate "Loan to Director," "Loan from Bank," or "Loan from Director."
+Sales and Income: Credits labeled "interest" or "sales" imply "Interest Income" or "Sale of Goods/Services."
+Operational Costs: Debits related to services or costs imply "Cost of Services / Cost of Sales."
+Employee-Related: "Salary" or "wage" suggests "Salaries and Wages"; "bonus" implies "Director Remuneration."
+Professional Services: "Consulting" or "professional" expenses indicate "Professional Charges."
+Recurring Expenses: Words like "rent," "repair," or "travel" map to categories such as "Rental & Accommodation Expense" or "Repairs & Maintenance."
+Tax Payments: Explicit labels like "GST" or "TDS" should be classified as "GST Payment" or "TDS Payment."
+Handle Unclear Entries: If the information in the row is insufficient for a clear categorization, make the best possible guess or label it as "Unclassified."
 
+Provide Explanations: For each classified transaction, give a brief explanation justifying the categorization based on the description, Cr/Dr indicator, and any keywords, patterns, or contextual understanding used.
 **Transaction Details**:
 - **Description**: {description}
 - **Credit/Debit**: {cr_dr_indicator}
