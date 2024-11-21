@@ -8,7 +8,7 @@ import json
 # Initialize the API clients with secrets
 groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 openai.api_key = st.secrets["OPENAI_API_KEY"]
-client = OpenAI()
+client = openai()
 
 # Define the system prompt
 def create_system_prompt():
