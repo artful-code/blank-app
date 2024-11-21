@@ -113,7 +113,8 @@ def classify_with_openai(row, with_narration, model):
         temperature=0.13,
         max_tokens=256
     )
-    
+    st.write("openai_raw")
+    st.write(completion)
     return extract_response_openai(completion)
 
 # Extract response content specifically for Groq
