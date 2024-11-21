@@ -24,60 +24,59 @@ def create_system_prompt():
 # Define the user prompt
 def create_user_prompt(description, cr_dr_indicator, narration=None):
     prompt = f"""
-You are an expert accountant tasked with categorizing bank transactions into predefined accounting categories. Each transaction includes the following details: transaction ID, value date, posted date, description, Cr/Dr indicator (credit or debit), transaction amount, and available balance.
+    You are an expert accountant tasked with categorizing bank transactions into predefined accounting categories. Each transaction includes the following details: transaction ID, value date, posted date, description, Cr/Dr indicator (credit or debit), transaction amount, and available balance.
 
-### Instructions:
-1. **Classify the Transaction**:
-   - Assign exactly one category to each transaction from this predefined list:
-     - Land & Building
-     - Furniture
-     - Computer
-     - Loan to Director
-     - Sale of Goods/Services
-     - Interest Income
-     - Other Income (including Dividend Income)
-     - Cost of Services / Cost of Sales
-     - Salaries and Wages
-     - Bank Charges
-     - Interest Expenses
-     - Director Remuneration
-     - Professional Charges
-     - Rental & Accommodation Expense
-     - Repairs & Maintenance
-     - Travelling Expenses
-     - Telephone Expense
-     - Capital Infusion
-     - Loan from Bank
-     - Loan from Director
-     - GST Payment
-     - TDS Payment
+    ### Instructions:
+    1. **Classify the Transaction**:
+       - Assign exactly one category to each transaction from this predefined list:
+         - Land & Building
+         - Furniture
+         - Computer
+         - Loan to Director
+         - Sale of Goods/Services
+         - Interest Income
+         - Other Income (including Dividend Income)
+         - Cost of Services / Cost of Sales
+         - Salaries and Wages
+         - Bank Charges
+         - Interest Expenses
+         - Director Remuneration
+         - Professional Charges
+         - Rental & Accommodation Expense
+         - Repairs & Maintenance
+         - Travelling Expenses
+         - Telephone Expense
+         - Capital Infusion
+         - Loan from Bank
+         - Loan from Director
+         - GST Payment
+         - TDS Payment
 
-2. **Interpretation Rules**:
-   - Use the transaction description and Cr/Dr indicator to determine the most appropriate category.
-   - Address typos or slight variations in terms (e.g., "accessorie" for "accessory") by inferring the intended meaning.
-   - Broaden interpretations when necessary:
-     - **Accessories/Gadgets** → Furniture, Computer, or Cost of Services / Cost of Sales.
-     - **Rent/Repair** → Rental & Accommodation Expense or Repairs & Maintenance.
-   - Consider "CR" (credit) transactions as income, refunds, or capital infusion.
-   - Consider "DR" (debit) transactions as expenses, loan repayments, or outgoing payments.
+    2. **Interpretation Rules**:
+       - Use the transaction description and Cr/Dr indicator to determine the most appropriate category.
+       - Address typos or slight variations in terms (e.g., "accessorie" for "accessory") by inferring the intended meaning.
+       - Broaden interpretations when necessary:
+         - **Accessories/Gadgets** → Furniture, Computer, or Cost of Services / Cost of Sales.
+         - **Rent/Repair** → Rental & Accommodation Expense or Repairs & Maintenance.
+       - Consider "CR" (credit) transactions as income, refunds, or capital infusion.
+       - Consider "DR" (debit) transactions as expenses, loan repayments, or outgoing payments.
 
-3. **Vendor/Customer Extraction**:
-   - Extract vendor or customer names from the transaction description only.
+    3. **Vendor/Customer Extraction**:
+       - Extract vendor or customer names from the transaction description only.
 
-4. **Handling Unclear Entries**:
-   - If the transaction details are insufficient for a clear classification, make an educated guess or label it as "Unclassified."
+    4. **Handling Unclear Entries**:
+       - If the transaction details are insufficient for a clear classification, make an educated guess or label it as "Unclassified."
 
-5. **Provide an Explanation**:
-   - Justify the assigned category with a brief explanation based on keywords, patterns, or the overall transaction context.
+    5. **Provide an Explanation**:
+       - Justify the assigned category with a brief explanation based on keywords, patterns, or the overall transaction context.
 
-### Transaction Details:
-- **Description**: {description}
-- **Credit/Debit**: {cr_dr_indicator}
-"""
+    ### Transaction Details:
+    - **Description**: {description}
+    - **Credit/Debit**: {cr_dr_indicator}
+    """
     if narration:
         prompt += f"- **Narration**: {narration}"
     return prompt
-
 
 # Function to process rows using Groq
 def classify_with_groq(row, with_narration):
@@ -133,10 +132,10 @@ def extract_response(completion):
 def main():
     st.title("Bank Statement Classifier")
 
-    # Sidebar for model selection
-    st.sidebar.title("Settings")
-    model_option = st.sidebar.selectbox(
-        "Choose the model for processing",
+    # Model selection dropdown
+    st.subheader("Choose an analysis model")
+    model_option = st.selectbox(
+        "Select a model to process the transactions:",
         ["LLAMA 90B (Groq)", "GPT4-o (OpenAI)", "GPT4-o-mini (OpenAI)"]
     )
 
