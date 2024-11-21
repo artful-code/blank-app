@@ -94,6 +94,8 @@ def classify_with_groq(row, with_narration):
         temperature=0.13,
         max_tokens=256
     )
+    st.subheader("Groq Raw Output")
+    st.json(completion) 
     return extract_response_groq(completion)
 
 # Function to process rows using OpenAI
@@ -112,6 +114,8 @@ def classify_with_openai(row, with_narration, model):
         temperature=0.13,
         max_tokens=256
     )
+    st.subheader("Openai Raw Output")
+    st.json(completion) 
     return extract_response_openai(completion)
 
 # Extract response content specifically for Groq
@@ -127,6 +131,7 @@ def extract_response_groq(completion):
         }
     except (KeyError, json.JSONDecodeError) as e:
         st.error(f"Error processing Groq response: {e}")
+        
         return {"Vendor/Customer": "", "Category": "", "Explanation": ""}
 
 # Extract response content specifically for OpenAI
