@@ -123,10 +123,6 @@ def extract_response_groq(completion):
         # Extract the `content` field from the first choice
         raw_content = completion["choices"][0].message.content
 
-        # Display the raw content for debugging in Streamlit
-        st.subheader("Groq Raw Content")
-        st.write(raw_content)
-
         # Parse the content if it contains valid JSON
         if "```json" in raw_content:  # Look for JSON content in the message
             start_index = raw_content.find("```json") + 7  # Start after the ```json
