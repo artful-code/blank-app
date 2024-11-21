@@ -94,7 +94,7 @@ def classify_with_groq(row, with_narration):
         temperature=0.13,
         max_tokens=256
     )
-    return extract_response(completion)
+    return extract_response_groq(completion)
 
 # Function to process rows using OpenAI
 def classify_with_openai(row, with_narration, model):
@@ -112,20 +112,36 @@ def classify_with_openai(row, with_narration, model):
         temperature=0.13,
         max_tokens=256
     )
-    return extract_response(completion)
+    return extract_response_openai(completion)
 
-# Extract response content and handle JSON parsing
-def extract_response(completion):
+# Extract response content specifically for Groq
+def extract_response_groq(completion):
     try:
-        response_content = completion['choices'][0]['message']['content']
-        response_dict = json.loads(response_content)
+        # Extract content from Groq's response structure
+        response_content = completion.choices[0].message["content"]
+        response_dict = json.loads(response_content)  # Parse as JSON
         return {
             "Vendor/Customer": response_dict.get("Vendor/Customer", ""),
             "Category": response_dict.get("Category", ""),
             "Explanation": response_dict.get("Explanation", "")
         }
-    except Exception as e:
-        st.error(f"Error processing response: {e}")
+    except (KeyError, json.JSONDecodeError) as e:
+        st.error(f"Error processing Groq response: {e}")
+        return {"Vendor/Customer": "", "Category": "", "Explanation": ""}
+
+# Extract response content specifically for OpenAI
+def extract_response_openai(completion):
+    try:
+        # Extract content from OpenAI's response structure
+        response_content = completion.choices[0].message["content"]
+        response_dict = json.loads(response_content)  # Parse as JSON
+        return {
+            "Vendor/Customer": response_dict.get("Vendor/Customer", ""),
+            "Category": response_dict.get("Category", ""),
+            "Explanation": response_dict.get("Explanation", "")
+        }
+    except (KeyError, json.JSONDecodeError) as e:
+        st.error(f"Error processing OpenAI response: {e}")
         return {"Vendor/Customer": "", "Category": "", "Explanation": ""}
 
 # Streamlit app
