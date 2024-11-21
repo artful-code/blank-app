@@ -114,25 +114,38 @@ def classify_with_openai(row, with_narration, model):
         temperature=0.13,
         max_tokens=256
     )
-    st.subheader("Openai Raw Output")
-    st.json(completion) 
+    
     return extract_response_openai(completion)
 
 # Extract response content specifically for Groq
 def extract_response_groq(completion):
     try:
-        # Extract content from Groq's response structure
-        response_content = completion.choices[0].message["content"]
-        response_dict = json.loads(response_content)  # Parse as JSON
+        # Extract the `content` field from the first choice
+        raw_content = completion["choices"][0].message.content
+
+        # Display the raw content for debugging in Streamlit
+        st.subheader("Groq Raw Content")
+        st.write(raw_content)
+
+        # Parse the content if it contains valid JSON
+        if "```json" in raw_content:  # Look for JSON content in the message
+            start_index = raw_content.find("```json") + 7  # Start after the ```json
+            end_index = raw_content.find("```", start_index)  # End before closing ```
+            json_content = raw_content[start_index:end_index]
+            response_dict = json.loads(json_content)  # Parse the extracted JSON string
+        else:
+            st.warning("No valid JSON found in Groq response content.")
+            response_dict = {}
+
         return {
             "Vendor/Customer": response_dict.get("Vendor/Customer", ""),
             "Category": response_dict.get("Category", ""),
             "Explanation": response_dict.get("Explanation", "")
         }
-    except (KeyError, json.JSONDecodeError) as e:
+    except (KeyError, json.JSONDecodeError, IndexError) as e:
         st.error(f"Error processing Groq response: {e}")
-        
         return {"Vendor/Customer": "", "Category": "", "Explanation": ""}
+
 
 # Extract response content specifically for OpenAI
 def extract_response_openai(completion):
