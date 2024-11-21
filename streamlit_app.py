@@ -2,13 +2,12 @@ import streamlit as st
 import pandas as pd
 from groq import Groq
 from io import BytesIO
-import openai
+from openai import OpenAI
 import json
 
 # Initialize the API clients with secrets
 groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-openai.api_key = st.secrets["OPENAI_API_KEY"]
-client = openai()
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"]) 
 
 # Define the system prompt
 def create_system_prompt():
@@ -99,6 +98,7 @@ def classify_with_groq(row, with_narration):
     return extract_response_groq(completion)
 
 # Function to process rows using OpenAI
+# Function to process rows using OpenAI
 def classify_with_openai(row, with_narration, model):
     try:
         # Prepare the user prompt
@@ -119,12 +119,11 @@ def classify_with_openai(row, with_narration, model):
             max_tokens=2000,
             top_p=1,
             frequency_penalty=0,
-            presence_penalty=0,
-            response_format={"type": "text"}
+            presence_penalty=0
         )
 
         # Extract response content
-        raw_content = response["choices"][0]["message"]["content"]
+        raw_content = response.choices[0].message.content
         response_dict = json.loads(raw_content)  # Parse as JSON
         return {
             "Vendor/Customer": response_dict.get("Vendor/Customer", ""),
