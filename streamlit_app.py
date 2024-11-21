@@ -7,7 +7,7 @@ import json
 
 # Initialize the API clients with secrets
 groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # Define the system prompt
 def create_system_prompt():
@@ -99,23 +99,40 @@ def classify_with_groq(row, with_narration):
 
 # Function to process rows using OpenAI
 def classify_with_openai(row, with_narration, model):
-    user_prompt = create_user_prompt(
-        description=row['Description'],
-        cr_dr_indicator=row['Credit/Debit'],
-        narration=row['Narration'] if with_narration else None
-    )
-    completion = openai.ChatCompletion.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": create_system_prompt()},
-            {"role": "user", "content": user_prompt}
-        ],
-        temperature=0.13,
-        max_tokens=256
-    )
-    st.write("openai_raw")
-    st.write(completion)
-    return extract_response_openai(completion)
+    try:
+        # Prepare the user prompt
+        user_prompt = create_user_prompt(
+            description=row['Description'],
+            cr_dr_indicator=row['Credit/Debit'],
+            narration=row['Narration'] if with_narration else None
+        )
+
+        # Call OpenAI API using the updated format
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": create_system_prompt()},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.13,
+            max_tokens=256,
+            top_p=1,
+            frequency_penalty=0,
+            presence_penalty=0,
+            response_format={"type": "text"}
+        )
+
+        # Extract response content
+        raw_content = response["choices"][0]["message"]["content"]
+        response_dict = json.loads(raw_content)  # Parse as JSON
+        return {
+            "Vendor/Customer": response_dict.get("Vendor/Customer", ""),
+            "Category": response_dict.get("Category", ""),
+            "Explanation": response_dict.get("Explanation", "")
+        }
+    except (KeyError, json.JSONDecodeError, AttributeError) as e:
+        st.error(f"Error processing OpenAI response: {e}")
+        return {"Vendor/Customer": "", "Category": "", "Explanation": ""}
 
 # Extract response content specifically for Groq
 def extract_response_groq(completion):
@@ -142,20 +159,7 @@ def extract_response_groq(completion):
         st.error(f"Error processing Groq response: {e}")
         return {"Vendor/Customer": "", "Category": "", "Explanation": ""}
 
-# Extract response content specifically for OpenAI
-def extract_response_openai(completion):
-    try:
-        # Extract content from OpenAI's response structure
-        raw_content = completion.choices[0].message.content  # Use .choices and .message.content
-        response_dict = json.loads(raw_content)  # Parse as JSON
-        return {
-            "Vendor/Customer": response_dict.get("Vendor/Customer", ""),
-            "Category": response_dict.get("Category", ""),
-            "Explanation": response_dict.get("Explanation", "")
-        }
-    except (AttributeError, json.JSONDecodeError) as e:
-        st.error(f"Error processing OpenAI response: {e}")
-        return {"Vendor/Customer": "", "Category": "", "Explanation": ""}
+
 
 
 # Streamlit app

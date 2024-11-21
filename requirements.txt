@@ -2,4 +2,4 @@ streamlit
 pandas
 groq
 openpyxl
-openai
+openai>=1.0.0
