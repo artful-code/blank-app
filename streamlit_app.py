@@ -7,7 +7,7 @@ import json
 
 # Initialize the API clients with secrets
 groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+client = openai(api_key=st.secrets["OPENAI_API_KEY"])
 
 # Define the system prompt
 def create_system_prompt():
@@ -115,7 +115,7 @@ def classify_with_openai(row, with_narration, model):
                 {"role": "user", "content": user_prompt}
             ],
             temperature=0.13,
-            max_tokens=256,
+            max_tokens=2000,
             top_p=1,
             frequency_penalty=0,
             presence_penalty=0,
