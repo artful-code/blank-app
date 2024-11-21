@@ -94,8 +94,7 @@ def classify_with_groq(row, with_narration):
         temperature=0.13,
         max_tokens=256
     )
-    st.subheader("Groq Raw Output")
-    st.json(completion) 
+   
     return extract_response_groq(completion)
 
 # Function to process rows using OpenAI
@@ -121,7 +120,7 @@ def classify_with_openai(row, with_narration, model):
 def extract_response_groq(completion):
     try:
         # Extract the `content` field from the first choice
-        raw_content = completion["choices"][0].message.content
+        raw_content = completion.choices[0].message.content  # Use .choices and .message.content
 
         # Parse the content if it contains valid JSON
         if "```json" in raw_content:  # Look for JSON content in the message
@@ -138,25 +137,25 @@ def extract_response_groq(completion):
             "Category": response_dict.get("Category", ""),
             "Explanation": response_dict.get("Explanation", "")
         }
-    except (KeyError, json.JSONDecodeError, IndexError) as e:
+    except (AttributeError, json.JSONDecodeError, IndexError) as e:
         st.error(f"Error processing Groq response: {e}")
         return {"Vendor/Customer": "", "Category": "", "Explanation": ""}
-
 
 # Extract response content specifically for OpenAI
 def extract_response_openai(completion):
     try:
         # Extract content from OpenAI's response structure
-        response_content = completion.choices[0].message["content"]
-        response_dict = json.loads(response_content)  # Parse as JSON
+        raw_content = completion.choices[0].message.content  # Use .choices and .message.content
+        response_dict = json.loads(raw_content)  # Parse as JSON
         return {
             "Vendor/Customer": response_dict.get("Vendor/Customer", ""),
             "Category": response_dict.get("Category", ""),
             "Explanation": response_dict.get("Explanation", "")
         }
-    except (KeyError, json.JSONDecodeError) as e:
+    except (AttributeError, json.JSONDecodeError) as e:
         st.error(f"Error processing OpenAI response: {e}")
         return {"Vendor/Customer": "", "Category": "", "Explanation": ""}
+
 
 # Streamlit app
 def main():
