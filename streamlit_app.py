@@ -24,51 +24,75 @@ def create_system_prompt():
 # Define the user prompt
 def create_user_prompt(description, cr_dr_indicator, narration=None):
     prompt = f"""
-    You are an expert accountant tasked with categorizing bank transactions into predefined accounting categories. Each transaction includes the following details: transaction ID, value date, posted date, description, Cr/Dr indicator (credit or debit), transaction amount, and available balance.
+    ### Task: Categorize Bank Transactions into Predefined Accounting Categories
 
-    ### Instructions:
-    1. **Classify the Transaction**:
-       - Assign exactly one category to each transaction from this predefined list:
-         - Land & Building
-         - Furniture
-         - Computer
-         - Loan to Director
-         - Sale of Goods/Services
-         - Interest Income
-         - Other Income (including Dividend Income)
-         - Cost of Services / Cost of Sales
-         - Salaries and Wages
-         - Bank Charges
-         - Interest Expenses
-         - Director Remuneration
-         - Professional Charges
-         - Rental & Accommodation Expense
-         - Repairs & Maintenance
-         - Travelling Expenses
-         - Telephone Expense
-         - Capital Infusion
-         - Loan from Bank
-         - Loan from Director
-         - GST Payment
-         - TDS Payment
+Each bank transaction includes the following details: transaction ID, value date, posted date, description, Cr/Dr indicator (credit or debit), transaction amount, and available balance. Your goal is to assign one category to each transaction and provide an explanation for your classification.
 
-    2. **Interpretation Rules**:
-       - Use the transaction description and Cr/Dr indicator to determine the most appropriate category.
-       - Address typos or slight variations in terms (e.g., "accessorie" for "accessory") by inferring the intended meaning.
-       - Broaden interpretations when necessary:
-         - **Accessories/Gadgets** → Furniture, Computer, or Cost of Services / Cost of Sales.
-         - **Rent/Repair** → Rental & Accommodation Expense or Repairs & Maintenance.
-       - Consider "CR" (credit) transactions as income, refunds, or capital infusion.
-       - Consider "DR" (debit) transactions as expenses, loan repayments, or outgoing payments.
+### **Instructions**:
 
-    3. **Vendor/Customer Extraction**:
-       - Extract vendor or customer names from the transaction description only.
+#### 1. **Classify the Transaction**:
+Assign exactly one category to each transaction from this predefined list:
 
-    4. **Handling Unclear Entries**:
-       - If the transaction details are insufficient for a clear classification, make an educated guess or label it as "Unclassified."
+- Land & Building
+- Furniture
+- Computer
+- Loan to Director
+- Sale of Goods/Services
+- Interest Income
+- Other Income (including Dividend Income)
+- Cost of Services / Cost of Sales
+- Salaries and Wages
+- Bank Charges
+- Interest Expenses
+- Director Remuneration
+- Professional Charges
+- Rental & Accommodation Expense
+- Repairs & Maintenance
+- Travelling Expenses
+- Telephone Expense
+- Capital Infusion
+- Loan from Bank
+- Loan from Director
+- GST Payment
+- TDS Payment
+- **Advance** (for advance salaries, advance tax, or similar transactions explicitly mentioning "advance")
 
-    5. **Provide an Explanation**:
-       - Justify the assigned category with a brief explanation based on keywords, patterns, or the overall transaction context.
+#### 2. **Interpretation Rules**:
+- Use the transaction description and Cr/Dr indicator to determine the most appropriate category.
+- Address typos or slight variations in terms (e.g., "accessorie" for "accessory") by inferring the intended meaning.
+- Broaden interpretations when necessary:
+  - **Accessories/Gadgets** → Furniture, Computer, or Cost of Services / Cost of Sales.
+  - **Rent/Repair** → Rental & Accommodation Expense or Repairs & Maintenance.
+- Consider "CR" (credit) transactions as income, refunds, or capital infusion.
+- Consider "DR" (debit) transactions as expenses, loan repayments, or outgoing payments.
+- **Advance**: Any description with the word "advance" (e.g., "advance salary" or "advance tax") must be categorized under Advance. If the word "advance" is not present, use other categories based on context.
+
+#### 3. **Vendor/Customer Extraction**:
+- Extract vendor or customer names from the transaction description only.
+
+#### 4. **Handling Unclear Entries**:
+- If the transaction details are insufficient for a clear classification, make an educated guess or label it as "Unclassified."
+
+#### 5. **Special Cases**:
+- Any **debit** transaction involving a vendor identified as an Indian bank should be classified as **Bank Charges**, unless explicitly suggested otherwise by the narration.
+
+#### 6. **Provide an Explanation**:
+- Justify the assigned category with a brief explanation based on keywords, patterns, or the overall transaction context.
+
+---
+
+### **Expected Output**:
+For each transaction, provide:
+- **Transaction ID**
+- **Assigned Category**
+- **Explanation** (justifying the categorization based on the description, Cr/Dr indicator, and other details)
+- **Vendor/Customer Name** (if applicable)
+
+---
+
+Follow these guidelines strictly while categorizing the transactions.
+
+
 
     ### Transaction Details:
     - **Description**: {description}
