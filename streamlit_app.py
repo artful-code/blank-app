@@ -12,7 +12,7 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 # Define the system prompt
 def create_system_prompt():
     return """
-    You are an expert accountant responsible for accurately categorizing bank transactions and extracting vendor/customer names according to strict criteria. For each transaction, provide a JSON output in the following format:
+    You are an expert accountant responsible for accurately categorizing bank transactions and extracting vendor/customer names according to strict criteria. For each transaction, provide a JSON output in the following format, do not return any accompanying string with the json response:
 
     {
         "Vendor/Customer": "<Extracted name or entity involved in the transaction>",
@@ -24,7 +24,7 @@ def create_system_prompt():
 # Define the user prompt
 def create_user_prompt(description, cr_dr_indicator, narration=None):
     prompt = f"""
-    ### Task: Categorize Bank Transactions into Predefined Accounting Categories
+    ### Task: Categorize Bank Transactions into Predefined Accounting Categories, return the output strictly in JSON format.
 
 Each bank transaction includes the following details: transaction ID, value date, posted date, description, Cr/Dr indicator (credit or debit), transaction amount, and available balance. Your goal is to assign one category to each transaction and provide an explanation for your classification.
 
