@@ -148,6 +148,7 @@ def classify_with_openai(row, with_narration, model):
 
         # Extract response content
         raw_content = response.choices[0].message.content
+        st.write(raw_content)
         response_dict = json.loads(raw_content)  # Parse as JSON
         return {
             "Vendor/Customer": response_dict.get("Vendor/Customer", ""),
