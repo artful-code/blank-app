@@ -110,7 +110,7 @@ def classify_with_groq(row, with_narration):
         narration=row['Narration'] if with_narration else None
     )
     completion = groq_client.chat.completions.create(
-        model="llama-3.2-90b-text-preview",
+        model="lllama3-70b-8192",
         messages=[
             {"role": "system", "content": create_system_prompt()},
             {"role": "user", "content": user_prompt}
