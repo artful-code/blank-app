@@ -116,7 +116,7 @@ def classify_with_groq(row, with_narration):
             {"role": "user", "content": user_prompt}
         ],
         temperature=0.13,
-        max_tokens=256
+        max_tokens=8000
     )
    
     return extract_response_groq(completion)
@@ -163,7 +163,7 @@ def extract_response_groq(completion):
     try:
         # Extract the `content` field from the first choice
         raw_content = completion.choices[0].message.content  # Use .choices and .message.content
-
+        st.write(raw_content)
         # Parse the content if it contains valid JSON
         if "```json" in raw_content:  # Look for JSON content in the message
             start_index = raw_content.find("```json") + 7  # Start after the ```json
