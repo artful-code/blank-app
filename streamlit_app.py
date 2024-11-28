@@ -100,7 +100,7 @@ def classify_with_groq(row, with_narration):
             max_tokens=8000
         )
         raw_content = completion.choices[0].message.content
-        st.write("Raw Groq Response:", raw_content)
+     
         json_content = extract_json_content(raw_content)
         return json.loads(json_content)
     except (KeyError, json.JSONDecodeError, AttributeError) as e:
@@ -128,7 +128,7 @@ def classify_with_openai(row, with_narration, model):
             presence_penalty=0
         )
         raw_content = response.choices[0].message.content
-        st.write("Raw OpenAI Response:", raw_content)
+        
         json_content = extract_json_content(raw_content)
         return json.loads(json_content)
     except (KeyError, json.JSONDecodeError, AttributeError) as e:
@@ -143,7 +143,7 @@ def main():
     st.subheader("Choose an analysis model")
     model_option = st.selectbox(
         "Select a model to process the transactions:",
-        ["LLAMA 90B (Groq)", "GPT4-o (OpenAI)", "GPT4-o-mini (OpenAI)"]
+        ["LLAMA 70B (Groq)", "GPT4-o (OpenAI)", "GPT4-o-mini (OpenAI)"]
     )
 
     # File upload
