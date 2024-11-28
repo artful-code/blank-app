@@ -12,127 +12,109 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 # Define the system prompt
 def create_system_prompt():
     return """
-    You are an expert accountant responsible for accurately categorizing bank transactions and extracting vendor/customer names according to strict criteria. For each transaction, provide a JSON output in the following format, do not return any accompanying string with the json response:
+    You are an expert accountant responsible for accurately categorizing bank transactions and extracting vendor/customer names according to strict criteria. For each transaction, provide a JSON output in the following format:
 
     {
         "Vendor/Customer": "<Extracted name or entity involved in the transaction>",
-        "Category": "<One category from the strictly defined list in user prompt>",
+        "Category": "<One category from the strictly defined list>",
         "Explanation": "<Brief reasoning for the chosen category based on the description, Cr/Dr indicator, and narration if provided>"
     }
+
+    Ensure that your response includes only the JSON output without any accompanying text.
     """
 
 # Define the user prompt
 def create_user_prompt(description, cr_dr_indicator, narration=None):
     prompt = f"""
-    ### Task: Categorize Bank Transactions into Predefined Accounting Categories, return the output strictly in JSON format.
+    ### Task: Categorize Bank Transactions into Predefined Accounting Categories.
 
-Each bank transaction includes the following details: transaction ID, value date, posted date, description, Cr/Dr indicator (credit or debit), transaction amount, and available balance. Your goal is to assign one category to each transaction and provide an explanation for your classification.
-
-### **Instructions**:
-
-#### 1. **Classify the Transaction**:
-Assign exactly one category to each transaction from this predefined list:
-
-- Land & Building
-- Furniture
-- Computer
-- Loan to Director
-- Sale of Goods/Services
-- Interest Income
-- Other Income (including Dividend Income)
-- Cost of Services / Cost of Sales
-- Salaries and Wages
-- Bank Charges
-- Interest Expenses
-- Director Remuneration
-- Professional Charges
-- Rental & Accommodation Expense
-- Repairs & Maintenance
-- Travelling Expenses
-- Telephone Expense
-- Capital Infusion
-- Loan from Bank
-- Loan from Director
-- GST Payment
-- TDS Payment
-- **Advance** (for advance salaries, advance tax, or similar transactions explicitly mentioning "advance")
-
-#### 2. **Interpretation Rules**:
-- Use the transaction description and Cr/Dr indicator to determine the most appropriate category.
-- Address typos or slight variations in terms (e.g., "accessorie" for "accessory") by inferring the intended meaning.
-- Broaden interpretations when necessary:
-  - **Accessories/Gadgets** → Furniture, Computer, or Cost of Services / Cost of Sales.
-  - **Rent/Repair** → Rental & Accommodation Expense or Repairs & Maintenance.
-- Consider "CR" (credit) transactions as income, refunds, or capital infusion.
-- Consider "DR" (debit) transactions as expenses, loan repayments, or outgoing payments.
-- **Advance**: Any description with the word "advance" (e.g., "advance salary" or "advance tax") must be categorized under Advance. If the word "advance" is not present, use other categories based on context.
-
-#### 3. **Vendor/Customer Extraction**:
-- Extract vendor or customer names from the transaction description only.
-
-#### 4. **Handling Unclear Entries**:
-- If the transaction details are insufficient for a clear classification, make an educated guess or label it as "Unclassified."
-
-#### 5. **Special Cases**:
-- Any **debit** transaction involving a vendor identified as an Indian bank should be classified as **Bank Charges**, unless explicitly suggested otherwise by the narration.
-
-#### 6. **Provide an Explanation**:
-- Justify the assigned category with a brief explanation based on keywords, patterns, or the overall transaction context.
-
----
-
-### **Expected Output**:
-For each transaction, provide:
-- **Transaction ID**
-- **Assigned Category**
-- **Explanation** (justifying the categorization based on the description, Cr/Dr indicator, and other details)
-- **Vendor/Customer Name** (if applicable)
-
----
-
-Follow these guidelines strictly while categorizing the transactions.
-
-
-
-    ### Transaction Details:
+    #### **Transaction Details**:
     - **Description**: {description}
     - **Credit/Debit**: {cr_dr_indicator}
     """
     if narration:
-        prompt += f"- **Narration**: {narration}"
+        prompt += f"- **Narration**: {narration}\n"
+
+    prompt += """
+    #### **Instructions**:
+    1. Choose one category for the transaction:
+       - Land & Building
+       - Furniture
+       - Computer
+       - Loan to Director
+       - Sale of Goods/Services
+       - Interest Income
+       - Other Income (including Dividend Income)
+       - Cost of Services / Cost of Sales
+       - Salaries and Wages
+       - Bank Charges
+       - Interest Expenses
+       - Director Remuneration
+       - Professional Charges
+       - Rental & Accommodation Expense
+       - Repairs & Maintenance
+       - Travelling Expenses
+       - Telephone Expense
+       - Capital Infusion
+       - Loan from Bank
+       - Loan from Director
+       - GST Payment
+       - TDS Payment
+       - Advance (for advance salaries, advance tax, or similar transactions)
+
+    2. Justify the category assignment with a brief explanation.
+
+    3. Extract vendor/customer names only if applicable.
+
+    4. If details are unclear, make an educated guess or mark as "Unclassified."
+    """
     return prompt
+
+# Utility function to clean and extract JSON
+def extract_json_content(content):
+    try:
+        if "```json" in content:
+            start = content.find("```json") + 7
+            end = content.find("```", start)
+            return content[start:end].strip()
+        return content.strip()
+    except Exception as e:
+        st.warning(f"Failed to extract JSON: {e}")
+        return ""
 
 # Function to process rows using Groq
 def classify_with_groq(row, with_narration):
-    user_prompt = create_user_prompt(
-        description=row['Description'],
-        cr_dr_indicator=row['Credit/Debit'],
-        narration=row['Narration'] if with_narration else None
-    )
-    completion = groq_client.chat.completions.create(
-        model="llama3-70b-8192",
-        messages=[
-            {"role": "system", "content": create_system_prompt()},
-            {"role": "user", "content": user_prompt}
-        ],
-        temperature=0.13,
-        max_tokens=8000
-    )
-   
-    return extract_response_groq(completion)
-
-# Function to process rows using OpenAI
-# Function to process rows using OpenAI
-def classify_with_openai(row, with_narration, model):
     try:
-        # Prepare the user prompt
         user_prompt = create_user_prompt(
             description=row['Description'],
             cr_dr_indicator=row['Credit/Debit'],
             narration=row['Narration'] if with_narration else None
         )
+        completion = groq_client.chat.completions.create(
+            model="llama3-70b-8192",
+            messages=[
+                {"role": "system", "content": create_system_prompt()},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.13,
+            max_tokens=8000
+        )
+        raw_content = completion.choices[0].message.content
+        st.write("Raw Groq Response:", raw_content)
+        json_content = extract_json_content(raw_content)
+        return json.loads(json_content)
+    except (KeyError, json.JSONDecodeError, AttributeError) as e:
+        st.error(f"Error processing Groq response: {e}")
+        return {"Vendor/Customer": "", "Category": "", "Explanation": ""}
 
-        # Call OpenAI API using the updated format
+# Function to process rows using OpenAI
+def classify_with_openai(row, with_narration, model):
+    try:
+        user_prompt = create_user_prompt(
+            description=row['Description'],
+            cr_dr_indicator=row['Credit/Debit'],
+            narration=row['Narration'] if with_narration else None
+        )
         response = client.chat.completions.create(
             model=model,
             messages=[
@@ -145,47 +127,13 @@ def classify_with_openai(row, with_narration, model):
             frequency_penalty=0,
             presence_penalty=0
         )
-
-        # Extract response content
         raw_content = response.choices[0].message.content
-        st.write(raw_content)
-        response_dict = json.loads(raw_content)  # Parse as JSON
-        return {
-            "Vendor/Customer": response_dict.get("Vendor/Customer", ""),
-            "Category": response_dict.get("Category", ""),
-            "Explanation": response_dict.get("Explanation", "")
-        }
+        st.write("Raw OpenAI Response:", raw_content)
+        json_content = extract_json_content(raw_content)
+        return json.loads(json_content)
     except (KeyError, json.JSONDecodeError, AttributeError) as e:
         st.error(f"Error processing OpenAI response: {e}")
         return {"Vendor/Customer": "", "Category": "", "Explanation": ""}
-
-# Extract response content specifically for Groq
-def extract_response_groq(completion):
-    try:
-        # Extract the `content` field from the first choice
-        raw_content = completion.choices[0].message.content  # Use .choices and .message.content
-        st.write(raw_content)
-        # Parse the content if it contains valid JSON
-        if "```json" in raw_content:  # Look for JSON content in the message
-            start_index = raw_content.find("```json") + 7  # Start after the ```json
-            end_index = raw_content.find("```", start_index)  # End before closing ```
-            json_content = raw_content[start_index:end_index]
-            response_dict = json.loads(json_content)  # Parse the extracted JSON string
-        else:
-            st.warning("No valid JSON found in Groq response content.")
-            response_dict = {}
-
-        return {
-            "Vendor/Customer": response_dict.get("Vendor/Customer", ""),
-            "Category": response_dict.get("Category", ""),
-            "Explanation": response_dict.get("Explanation", "")
-        }
-    except (AttributeError, json.JSONDecodeError, IndexError) as e:
-        st.error(f"Error processing Groq response: {e}")
-        return {"Vendor/Customer": "", "Category": "", "Explanation": ""}
-
-
-
 
 # Streamlit app
 def main():
@@ -228,9 +176,9 @@ def main():
                     progress_bar.progress((idx + 1) / len(df))
                 progress_bar.empty()
 
-                df["Vendor/Customer"] = [res["Vendor/Customer"] for res in results]
-                df["Category"] = [res["Category"] for res in results]
-                df["Explanation"] = [res["Explanation"] for res in results]
+                df["Vendor/Customer"] = [res.get("Vendor/Customer", "") for res in results]
+                df["Category"] = [res.get("Category", "") for res in results]
+                df["Explanation"] = [res.get("Explanation", "") for res in results]
 
                 excel_buffer = BytesIO()
                 df.to_excel(excel_buffer, index=False)
