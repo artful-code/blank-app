@@ -6,9 +6,6 @@ from openai import OpenAI
 import json
 
 
-# Load the ledger definitions JSON
-with open('ledger_definitions.json', 'r') as f:
-    ledger_definitions = json.load(f)
 
 # Initialize the API clients with secrets
 groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
@@ -29,16 +26,7 @@ def create_system_prompt():
     """
 
 # Define the user prompt
-# Define the user prompt based on cr_dr_indicator
 def create_user_prompt(description, cr_dr_indicator, narration=None):
-    if cr_dr_indicator not in ["Credit", "Debit"]:
-        return "Invalid value for Credit/Debit indicator. Must be 'Credit' or 'Debit'."
-
-    # Fetch categories and their definitions dynamically from the JSON
-    categories = {category: definitions.get(cr_dr_indicator, "No definition available.")
-                  for category, definitions in ledger_definitions.items()}
-
-    # Generate the prompt dynamically
     prompt = f"""
     ### Task: Categorize Bank Transactions into Predefined Accounting Categories.
 
@@ -51,12 +39,31 @@ def create_user_prompt(description, cr_dr_indicator, narration=None):
 
     prompt += """
     #### **Instructions**:
-    1. Choose one category for the transaction from the following:
-    """
-    for category, definition in categories.items():
-        prompt += f"       - {category}: {definition}\n"
+    1. Choose one category for the transaction:
+       - Land & Building
+       - Furniture
+       - Computer
+       - Loan to Director
+       - Sale of Goods/Services
+       - Interest Income
+       - Other Income (including Dividend Income)
+       - Cost of Services / Cost of Sales
+       - Salaries and Wages
+       - Bank Charges
+       - Interest Expenses
+       - Director Remuneration
+       - Professional Charges
+       - Rental & Accommodation Expense
+       - Repairs & Maintenance
+       - Travelling Expenses
+       - Telephone Expense
+       - Capital Infusion
+       - Loan from Bank
+       - Loan from Director
+       - GST Payment
+       - TDS Payment
+       - Advance (for advance salaries, advance tax, or similar transactions)
 
-    prompt += """
     2. Justify the category assignment with a brief explanation.
 
     3. Extract vendor/customer names only if applicable.
