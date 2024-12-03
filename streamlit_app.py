@@ -168,7 +168,7 @@ def main():
                 results = []
                 progress_bar = st.progress(0)
                 for idx, row in df.iterrows():
-                    if model_option == "LLAMA 90B (Groq)":
+                    if model_option == "LLAMA 70B (Groq)":
                         result = classify_with_groq(row, with_narration)
                     elif model_option == "GPT4-o (OpenAI)":
                         result = classify_with_openai(row, with_narration, "gpt-4o")
