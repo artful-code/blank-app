@@ -188,6 +188,7 @@ def create_user_prompt(description, cr_dr_indicator, narration=None):
 
     return prompt
 
+
 def push_to_es(unique_id, vendor, category):
     payload = {
         "unique_id": unique_id,
@@ -213,21 +214,22 @@ def search_in_es(vendor):
     except Exception as e:
         return None
     return None
-system_prompt = create_system_prompt()
-
 
 def classify_transaction(row, with_narration, model):
+    system_prompt = create_system_prompt()
     vendor = row['Description']  # Using Description as Vendor reference
     existing_category = search_in_es(vendor)
     if existing_category:
         return {"Vendor/Customer": vendor, "Category": existing_category, "Explanation": "Retrieved from database"}
+    
+    user_prompt = create_user_prompt(row['Description'], row['Credit/Debit'], row.get('Narration') if with_narration else None)
     
     if model == "LLAMA 70B (Groq)":
         completion = groq_client.chat.completions.create(
             model="llama3-70b-8192",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": create_user_prompt(row['Description'], row['Credit/Debit'], row.get('Narration') if with_narration else None)}
+                {"role": "user", "content": user_prompt}
             ],
             temperature=0.13,
             max_tokens=8000
@@ -237,8 +239,8 @@ def classify_transaction(row, with_narration, model):
         response = client.chat.completions.create(
             model="gpt-4o" if model == "GPT4-o (OpenAI)" else "gpt-4o-mini",
             messages=[
-                {"role": "system", "content": create_system_prompt()},
-                {"role": "user", "content": create_user_prompt(row['Description'], row['Credit/Debit'], row.get('Narration') if with_narration else None)}
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
             ],
             temperature=0.13,
             max_tokens=2000
