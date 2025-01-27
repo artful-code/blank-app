@@ -323,6 +323,11 @@ def create_rule_ui():
 
 def apply_rules(df):
     df = df.copy()
+    
+    # Convert Amount column to numeric if it exists
+    if "Amount" in df.columns:
+        df["Amount"] = pd.to_numeric(df["Amount"].str.replace(',', ''), errors='coerce')
+    
     for rule in st.session_state.rules:
         mask = pd.Series(True, index=df.index)
         
@@ -334,12 +339,20 @@ def apply_rules(df):
         
         # Apply amount condition if exists
         if "amount_condition" in rule and "Amount" in df.columns:
-            if rule["amount_condition"] == "greater than":
-                mask &= df["Amount"] > rule["amount_value"]
-            elif rule["amount_condition"] == "less than":
-                mask &= df["Amount"] < rule["amount_value"]
-            else:
-                mask &= df["Amount"] == rule["amount_value"]
+            amount_value = float(rule["amount_value"])  # Convert rule amount to float
+            
+            try:
+                if rule["amount_condition"] == "greater than":
+                    mask &= df["Amount"].fillna(0) > amount_value
+                elif rule["amount_condition"] == "less than":
+                    mask &= df["Amount"].fillna(0) < amount_value
+                else:  # equals
+                    mask &= df["Amount"].fillna(0) == amount_value
+            except Exception as e:
+                st.error(f"Error comparing amounts: {str(e)}")
+                st.write("Amount column:", df["Amount"].dtype)
+                st.write("Rule amount value:", amount_value)
+                continue
         
         # Apply transaction type
         mask &= df["Credit/Debit"] == rule["transaction_type"]
