@@ -183,8 +183,25 @@ def create_user_prompt(description, cr_dr_indicator, narration=None):
     return prompt
 
 
+def is_valid_vendor(vendor):
+    """Check if vendor name is valid (not empty, not Unclassified, etc.)"""
+    if not vendor:
+        return False
+    invalid_names = {"unclassified", "n/a", "unknown", "none", "", "error"}
+    return str(vendor).lower().strip() not in invalid_names
+
 def push_to_es(unique_id, vendor, category):
     try:
+        # Validate vendor name before pushing
+        if not is_valid_vendor(vendor):
+            st.warning(f"Skipping Elasticsearch push: Invalid vendor name '{vendor}'")
+            return None
+            
+        # Validate category
+        if not category or category.lower() in {"unclassified", "error in classification"}:
+            st.warning(f"Skipping Elasticsearch push: Invalid category '{category}'")
+            return None
+
         payload = {
             "unique_id": unique_id,
             "Vendor/Customer": vendor,
@@ -198,6 +215,10 @@ def push_to_es(unique_id, vendor, category):
 
 def search_in_es(vendor):
     try:
+        # Skip search if vendor name is invalid
+        if not is_valid_vendor(vendor):
+            return None
+            
         query = {
             "query": {
                 "match": {
@@ -206,12 +227,16 @@ def search_in_es(vendor):
             }
         }
         response = es.search(index=INDEX_NAME, body=query)
+        
         if response["hits"]["hits"]:
-            return response["hits"]["hits"][0]["_source"]["Category"]
+            category = response["hits"]["hits"][0]["_source"]["Category"]
+            # Double check the category is valid
+            if category and category.lower() not in {"unclassified", "error in classification"}:
+                return category
+                
     except Exception as e:
         st.error(f"Elasticsearch search error: {str(e)}")
     return None
-
 def classify_transaction(row, with_narration=False):
     try:
         system_prompt = create_system_prompt()
