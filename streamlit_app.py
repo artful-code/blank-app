@@ -260,6 +260,55 @@ def create_user_prompt(description, cr_dr_indicator, narration=None):
 
     return prompt
 
+def get_categories_for_type(transaction_type):
+    """Get categories based on transaction type from ledger data"""
+    ledger_data = {
+        "Credit": {
+            "Land & Building": "Purchased Land & Building",
+            "Furniture": "Purchase of furniture made during the year",
+            "Computer": "Purchase of computer made during the year",
+            "Loan to Director": "Loan amount transferred to director",
+            "Sale of Goods/Services": "Revenue from sale of goods or services",
+            "Interest Income": "If any interest income is received",
+            "Other Income (including Dividend Income)": "Income other than revenue from operations",
+            "Cost of Services / Cost of Sales": "Expenses incurred for services or sales",
+            "Salaries and Wages": "Salary payment to employees",
+            "Bank Charges": "Bank charges debited from the bank statement",
+            "Interest Expenses": "Loan interest expenses",
+            "Director Remuneration": "Directors' salary payments made during the year",
+            "Professional Charges": "Fee paid to professionals",
+            "Rental & Accommodation Expense": "Rental payments to landlord",
+            "Repairs & Maintenance": "Expenses in nature of repairs and maintenance",
+            "Travelling Expenses": "Expenses related to travel",
+            "Telephone Expense": "Expenses for telephone, mobile recharge, internet",
+            "Capital Infusion": "Capital contribution made by the director",
+            "Loan from Bank": "Loan proceeds received from the bank",
+            "Loan from Director": "Loan proceeds received from the director",
+            "GST Payment": "GST tax payment made",
+            "TDS Payment": "TDS tax payment made",
+            "Advance": "For advance salaries, advance tax, or similar transactions"
+            # ... rest of your Credit categories
+        },
+        "Debit": {
+            "Closing balance SP (A)": "Closing balance of securities premium account",
+            "Closing balance PL (B)": "Closing balance of profit & loss account/retained earnings",
+            "From Bank (LT)": "Secured long-term bank loan received",
+            "From Directors (LT)": "Unsecured long-term loan received from Directors",
+            "From Others (LT)": "Unsecured long-term loan received from Others",
+            "Opening balance DTL": "Opening balance of deferred tax liabilities",
+            "Other non-current liabilities": "Any other liability to be repaid after 12 months",
+            "Gratuity": "Gratuity payable to employees",
+            "From Bank (ST)": "Secured short-term bank loan received repayable within 12 months",
+            "From Directors (ST)": "Unsecured short-term loan received from Directors repayable within 12 months",
+            "Provision for expenses": "Provision made to meet upcoming expenses",
+            "Provision for employee benefits": "Provision made for employee benefits like salaries"
+            # ... rest of your Debit categories
+        }
+    }
+    
+    # Return just the category names (keys) for the selected transaction type
+    return sorted(ledger_data.get(transaction_type, {}).keys())
+
 
 def process_with_ai(row):
     try:
