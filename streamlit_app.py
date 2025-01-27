@@ -373,37 +373,42 @@ def create_rule_ui():
 def apply_rules(df):
     df = df.copy()
     
+    # Ensure required columns exist
+    if 'Extracted_Vendor' not in df.columns:
+        df['Extracted_Vendor'] = ''
+    if 'Category' not in df.columns:
+        df['Category'] = ''
+    
     # Convert Amount column to numeric if it exists
     if "Amount" in df.columns:
         df["Amount"] = pd.to_numeric(df["Amount"].str.replace(',', ''), errors='coerce')
-    
-    # Initialize Category column if it doesn't exist
-    if "Category" not in df.columns:
-        df["Category"] = None
     
     for rule in st.session_state.rules:
         mask = pd.Series(True, index=df.index)
         
         # Apply vendor condition
         if rule["vendor_condition"] == "equals":
-            mask &= df["Extracted_Vendor"] == rule["vendor_value"]
+            mask &= df["Extracted_Vendor"].fillna('') == rule["vendor_value"]
         else:
-            mask &= df["Extracted_Vendor"].str.contains(rule["vendor_value"], case=False, na=False)
+            mask &= df["Extracted_Vendor"].fillna('').str.contains(rule["vendor_value"], case=False, na=False)
         
         # Apply amount condition
-        amount_value = float(rule["amount_value"])
-        if rule["amount_condition"] == "greater than":
-            mask &= df["Amount"].fillna(0) > amount_value
-        elif rule["amount_condition"] == "less than":
-            mask &= df["Amount"].fillna(0) < amount_value
-        else:  # equals
-            mask &= df["Amount"].fillna(0) == amount_value
+        if "Amount" in df.columns:
+            amount_value = float(rule["amount_value"])
+            if rule["amount_condition"] == "greater than":
+                mask &= df["Amount"].fillna(0) > amount_value
+            elif rule["amount_condition"] == "less than":
+                mask &= df["Amount"].fillna(0) < amount_value
+            else:  # equals
+                mask &= df["Amount"].fillna(0) == amount_value
         
         # Apply transaction type
         mask &= df["Credit/Debit"] == rule["transaction_type"]
         
         # Update matching rows
         df.loc[mask, "Category"] = rule["category"]
+    
+    return df
     
     return df
 def main():
@@ -431,6 +436,12 @@ def main():
         # Initial file processing
         if st.session_state.df is None:
             df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+            
+            # Initialize required columns
+            df['Extracted_Vendor'] = ''
+            df['Category'] = ''
+            df['AI_Category'] = ''
+            
             st.session_state.df = df.copy()
             
             # Process with AI and check Elasticsearch
@@ -445,10 +456,13 @@ def main():
                 existing_category = search_in_es(row['Description'])
                 if existing_category:
                     es_matched += 1
+                    df.loc[idx, 'Category'] = existing_category
                 else:
                     # Process with AI if not in ES
                     result = process_with_ai(row)
                     ai_results[idx] = result
+                    df.loc[idx, 'Extracted_Vendor'] = result.get("Vendor/Customer", "")
+                    df.loc[idx, 'AI_Category'] = result.get("Category", "")
                     if is_valid_vendor(result.get("Vendor/Customer")):
                         st.session_state.unique_vendors.add(result["Vendor/Customer"])
                 
@@ -458,111 +472,108 @@ def main():
             st.session_state.ai_results = ai_results
             
             # Create remaining_df excluding ES matches
-            remaining_mask = ~df.index.isin([idx for idx, row in df.iterrows() 
-                                           if search_in_es(row['Description'])])
+            remaining_mask = df['Category'] == ''
             st.session_state.remaining_df = df[remaining_mask].copy()
             
             st.success(f"{es_matched} out of {total_transactions} transactions found in database")
-            
+        
         # Display remaining transactions
-        if len(st.session_state.remaining_df) > 0:
-            st.subheader("Remaining Transactions")
-            st.write(st.session_state.remaining_df)
+        if st.session_state.remaining_df is not None and len(st.session_state.remaining_df) > 0:
+            st.subheader(f"Remaining Transactions ({len(st.session_state.remaining_df)})")
+            st.dataframe(st.session_state.remaining_df[['Description', 'Credit/Debit', 'Extracted_Vendor', 'Amount', 'AI_Category']])
             
-            # Rules Processing Section
-            st.subheader("Create Classification Rules")
-            col1, col2 = st.columns(2)
+            # Choose classification method
+            method = st.radio("Choose classification method:", ["Write Rules", "Use AI Classifications"])
             
-            with col1:
-                vendor_condition = st.selectbox(
-                    "Vendor Name Condition",
-                    ["equals", "contains"],
-                    key="vendor_condition"
-                )
-                vendor_value = st.selectbox(
-                    "Select Vendor",
-                    sorted(list(st.session_state.unique_vendors)),
-                    key="vendor_value"
-                )
-            
-            with col2:
-                amount_condition = st.selectbox(
-                    "Amount Condition",
-                    ["greater than", "less than", "equals"],
-                    key="amount_condition"
-                )
-                amount_value = st.number_input(
-                    "Amount Value",
-                    min_value=0.0,
-                    step=0.01,
-                    format="%.2f",
-                    key="amount_value"
-                )
-                transaction_type = st.selectbox(
-                    "Transaction Type",
-                    ["Credit", "Debit"],
-                    key="transaction_type"
-                )
-            
-            categories = get_categories_for_type(transaction_type)
-            category = st.selectbox("Select Category", categories, key="category")
-            
-            if st.button("Add Rule"):
-                new_rule = {
-                    "vendor_condition": vendor_condition,
-                    "vendor_value": vendor_value,
-                    "amount_condition": amount_condition,
-                    "amount_value": amount_value,
-                    "transaction_type": transaction_type,
-                    "category": category
-                }
-                st.session_state.rules.append(new_rule)
-                st.success("Rule added!")
-            
-            # Display and apply rules
-            if st.session_state.rules:
-                st.subheader("Current Rules")
-                for i, rule in enumerate(st.session_state.rules):
-                    st.write(f"Rule {i+1}:", rule)
+            if method == "Write Rules":
+                st.subheader("Create Classification Rules")
+                col1, col2 = st.columns(2)
                 
-                if st.button("Apply Rules"):
-                    with st.spinner("Applying rules..."):
-                        classified_df = apply_rules(st.session_state.remaining_df)
-                        st.session_state.rules_applied = True
-                        st.session_state.remaining_df = classified_df
-                        st.success("Rules applied successfully!")
-                        
-                        # Show approval button for rules
-                        if st.button("Approve Rule Classifications"):
-                            rules_mask = classified_df["Category"].notna()
-                            rules_df = classified_df[rules_mask]
-                            for _, row in rules_df.iterrows():
-                                push_to_es(row["Description"], row["Extracted_Vendor"], row["Category"])
-                            st.success("Rule classifications saved to database!")
+                with col1:
+                    vendor_condition = st.selectbox(
+                        "Vendor Name Condition",
+                        ["equals", "contains"],
+                        key="vendor_condition"
+                    )
+                    vendor_value = st.selectbox(
+                        "Select Vendor",
+                        sorted(list(st.session_state.unique_vendors)),
+                        key="vendor_value"
+                    )
+                
+                with col2:
+                    amount_condition = st.selectbox(
+                        "Amount Condition",
+                        ["greater than", "less than", "equals"],
+                        key="amount_condition"
+                    )
+                    amount_value = st.number_input(
+                        "Amount Value",
+                        min_value=0.0,
+                        step=0.01,
+                        format="%.2f",
+                        key="amount_value"
+                    )
+                    transaction_type = st.selectbox(
+                        "Transaction Type",
+                        ["Credit", "Debit"],
+                        key="transaction_type"
+                    )
+                
+                categories = get_categories_for_type(transaction_type)
+                category = st.selectbox("Select Category", categories, key="category")
+                
+                if st.button("Add Rule"):
+                    new_rule = {
+                        "vendor_condition": vendor_condition,
+                        "vendor_value": vendor_value,
+                        "amount_condition": amount_condition,
+                        "amount_value": amount_value,
+                        "transaction_type": transaction_type,
+                        "category": category
+                    }
+                    st.session_state.rules.append(new_rule)
+                    st.success("Rule added!")
+                
+                if st.session_state.rules:
+                    st.subheader("Current Rules")
+                    for i, rule in enumerate(st.session_state.rules):
+                        st.write(f"Rule {i+1}:", rule)
+                    
+                    if st.button("Apply Rules"):
+                        with st.spinner("Applying rules..."):
+                            classified_df = apply_rules(st.session_state.remaining_df)
+                            matched_mask = classified_df['Category'] != ''
                             
-                            # Update remaining_df
-                            st.session_state.remaining_df = classified_df[~rules_mask]
+                            if matched_mask.any():
+                                st.write("Matched Transactions:")
+                                st.dataframe(classified_df[matched_mask])
+                                
+                                if st.button("Approve Rule Classifications"):
+                                    for _, row in classified_df[matched_mask].iterrows():
+                                        push_to_es(row["Description"], row["Extracted_Vendor"], row["Category"])
+                                    st.success("Rule classifications saved to database!")
+                                    
+                                    # Update remaining_df
+                                    st.session_state.remaining_df = classified_df[~matched_mask]
+                                    if len(st.session_state.remaining_df) > 0:
+                                        st.write(f"{len(st.session_state.remaining_df)} transactions remaining")
+                                        if st.button("Process Remaining with AI"):
+                                            st.session_state.remaining_df['Category'] = st.session_state.remaining_df['AI_Category']
+                                            st.write("AI Classifications:")
+                                            st.dataframe(st.session_state.remaining_df)
             
-            # AI Processing for remaining transactions
-            if len(st.session_state.remaining_df) > 0:
-                st.subheader(f"Process {len(st.session_state.remaining_df)} Remaining Transactions with AI")
-                if st.button("Process with AI"):
-                    # Use stored AI results
-                    remaining_indices = st.session_state.remaining_df.index
-                    for idx in remaining_indices:
-                        if idx in st.session_state.ai_results:
-                            result = st.session_state.ai_results[idx]
-                            st.session_state.remaining_df.loc[idx, "Category"] = result["Category"]
-                            st.session_state.remaining_df.loc[idx, "Extracted_Vendor"] = result["Vendor/Customer"]
-                    
-                    st.write("AI Classifications:", st.session_state.remaining_df)
-                    
-                    if st.button("Approve AI Classifications"):
-                        for _, row in st.session_state.remaining_df.iterrows():
-                            push_to_es(row["Description"], row["Extracted_Vendor"], row["Category"])
-                        st.success("AI classifications saved to database!")
-                        st.session_state.remaining_df = pd.DataFrame()  # Clear remaining transactions
-
+            else:  # Use AI Classifications
+                st.write("AI Classifications for Remaining Transactions:")
+                st.session_state.remaining_df['Category'] = st.session_state.remaining_df['AI_Category']
+                st.dataframe(st.session_state.remaining_df)
+                
+                if st.button("Approve AI Classifications"):
+                    for _, row in st.session_state.remaining_df.iterrows():
+                        push_to_es(row["Description"], row["Extracted_Vendor"], row["Category"])
+                    st.success("AI classifications saved to database!")
+                    st.session_state.remaining_df = pd.DataFrame()  # Clear remaining transactions
+        
         # Download button for final results
         if st.session_state.df is not None:
             output = BytesIO()
