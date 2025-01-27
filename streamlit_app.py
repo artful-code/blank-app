@@ -13,15 +13,65 @@ ELASTIC_URL = "https://elastic:NuwRaaWUktq5FM1QJZe6iexV@my-deployment-3eafc9.es.
 INDEX_NAME = "accounting_classification"
 es = Elasticsearch(ELASTIC_URL)
 
-def create_system_prompt():
-    return """You are an expert accountant responsible for accurately categorizing bank transactions and extracting vendor/customer names according to strict criteria. 
-    For each transaction, provide a JSON output in the following format:
-    {
-        "Vendor/Customer": "<Extracted name or entity involved in the transaction>",
-        "Category": "<One category from the strictly defined list>",
-        "Explanation": "<Brief reasoning for the chosen category based on the description, Cr/Dr indicator, and narration if provided>"
-    }
-    Ensure that your response includes only the JSON output without any accompanying text."""
+# Initialize session state
+if 'ai_results' not in st.session_state:
+    st.session_state.ai_results = []
+if 'processed_df' not in st.session_state:
+    st.session_state.processed_df = None
+if 'unique_vendors' not in st.session_state:
+    st.session_state.unique_vendors = set()
+if 'rules' not in st.session_state:
+    st.session_state.rules = []
+
+def is_valid_vendor(vendor):
+    """Check if vendor name is valid"""
+    if not vendor:
+        return False
+    invalid_names = {"unclassified", "n/a", "unknown", "none", "", "error"}
+    return str(vendor).lower().strip() not in invalid_names
+
+def push_to_es(unique_id, vendor, category):
+    """Push to Elasticsearch with validation"""
+    try:
+        # Check if combination already exists
+        existing = search_in_es(vendor)
+        if existing == category:
+            return None
+            
+        if not is_valid_vendor(vendor) or not category:
+            return None
+
+        payload = {
+            "unique_id": unique_id,
+            "Vendor/Customer": vendor,
+            "Category": category
+        }
+        response = es.index(index=INDEX_NAME, document=payload)
+        return response
+    except Exception as e:
+        st.error(f"Elasticsearch error: {str(e)}")
+        return None
+
+def search_in_es(vendor):
+    """Search in Elasticsearch"""
+    try:
+        if not is_valid_vendor(vendor):
+            return None
+            
+        query = {
+            "query": {
+                "match": {
+                    "Vendor/Customer": vendor
+                }
+            }
+        }
+        response = es.search(index=INDEX_NAME, body=query)
+        
+        if response["hits"]["hits"]:
+            return response["hits"]["hits"][0]["_source"]["Category"]
+    except Exception as e:
+        st.error(f"Elasticsearch search error: {str(e)}")
+    return None
 
 # Define the user prompt
 def create_user_prompt(description, cr_dr_indicator, narration=None):
@@ -183,81 +233,24 @@ def create_user_prompt(description, cr_dr_indicator, narration=None):
     return prompt
 
 
-def is_valid_vendor(vendor):
-    """Check if vendor name is valid (not empty, not Unclassified, etc.)"""
-    if not vendor:
-        return False
-    invalid_names = {"unclassified", "n/a", "unknown", "none", "", "error"}
-    return str(vendor).lower().strip() not in invalid_names
-
-def push_to_es(unique_id, vendor, category):
+def process_with_ai(row):
+    """Process single transaction with AI and store in session state"""
     try:
-        # Validate vendor name before pushing
-        if not is_valid_vendor(vendor):
-            st.warning(f"Skipping Elasticsearch push: Invalid vendor name '{vendor}'")
-            return None
-            
-        # Validate category
-        if not category or category.lower() in {"unclassified", "error in classification"}:
-            st.warning(f"Skipping Elasticsearch push: Invalid category '{category}'")
-            return None
-
-        payload = {
-            "unique_id": unique_id,
-            "Vendor/Customer": vendor,
-            "Category": category
-        }
-        response = es.index(index=INDEX_NAME, document=payload)
-        return response
-    except Exception as e:
-        st.error(f"Elasticsearch error: {str(e)}")
-        return None
-
-def search_in_es(vendor):
-    try:
-        # Skip search if vendor name is invalid
-        if not is_valid_vendor(vendor):
-            return None
-            
-        query = {
-            "query": {
-                "match": {
-                    "Vendor/Customer": vendor
-                }
-            }
-        }
-        response = es.search(index=INDEX_NAME, body=query)
-        
-        if response["hits"]["hits"]:
-            category = response["hits"]["hits"][0]["_source"]["Category"]
-            # Double check the category is valid
-            if category and category.lower() not in {"unclassified", "error in classification"}:
-                return category
-                
-    except Exception as e:
-        st.error(f"Elasticsearch search error: {str(e)}")
-    return None
-def classify_transaction(row, with_narration=False):
-    try:
-        system_prompt = create_system_prompt()
-        vendor = row['Description']
-        
-        # Check existing classification
-        existing_category = search_in_es(vendor)
-        if existing_category:
-            return {
-                "Vendor/Customer": vendor,
-                "Category": existing_category,
-                "Explanation": "Retrieved from database"
-            }
+        system_prompt = """You are an expert accountant responsible for accurately categorizing bank transactions and extracting vendor/customer names according to strict criteria. 
+    For each transaction, provide a JSON output in the following format:
+    {
+        "Vendor/Customer": "<Extracted name or entity involved in the transaction>",
+        "Category": "<One category from the strictly defined list>",
+        "Explanation": "<Brief reasoning for the chosen category based on the description, Cr/Dr indicator, and narration if provided>"
+    }
+    Ensure that your response includes only the JSON output without any accompanying text."""
         
         user_prompt = create_user_prompt(
-            row['Description'],
-            row['Credit/Debit'],
-            row.get('Narration') if with_narration else None
+            description=row['Description'],
+            cr_dr_indicator=row['Credit/Debit'],
+            narration=row.get('Narration') if 'Narration' in row else None
         )
         
-        # Make API call to GPT-4-mini
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -268,87 +261,126 @@ def classify_transaction(row, with_narration=False):
             max_tokens=2000
         )
         
-        raw_content = response.choices[0].message.content
+        content = response.choices[0].message.content.strip()
+        json_content = json.loads(content)
         
-        # Debug: Print raw response
-        st.write(f"Raw response for {vendor}:", raw_content)
-        
-        # Clean and parse JSON
-        raw_content = raw_content.strip()
-        if not raw_content.startswith('{'):
-            start_idx = raw_content.find('{')
-            end_idx = raw_content.rfind('}')
-            if start_idx != -1 and end_idx != -1:
-                raw_content = raw_content[start_idx:end_idx + 1]
-        
-        json_content = json.loads(raw_content)
-        
-        # Store in Elasticsearch
-        if json_content.get("Category"):
-            push_to_es(row["Description"], json_content["Vendor/Customer"], json_content["Category"])
-        
+        # Store vendor in unique vendors set
+        if is_valid_vendor(json_content.get("Vendor/Customer")):
+            st.session_state.unique_vendors.add(json_content["Vendor/Customer"])
+            
         return json_content
-    
+        
     except Exception as e:
-        st.error(f"Error processing transaction: {str(e)}")
-        return {
-            "Vendor/Customer": vendor if 'vendor' in locals() else "Error",
-            "Category": "Processing Error",
-            "Explanation": f"Error: {str(e)}"
+        st.error(f"AI Processing error: {str(e)}")
+        return {"Vendor/Customer": "", "Category": "", "Explanation": str(e)}
+
+def create_rule_ui():
+    """Create UI for rule-based classification"""
+    st.subheader("Create Classification Rule")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        vendor_condition = st.selectbox("Vendor Name Condition", ["equals", "contains"])
+        vendor_value = st.selectbox("Select Vendor", sorted(list(st.session_state.unique_vendors)))
+        transaction_type = st.selectbox("Transaction Type", ["Credit", "Debit"])
+    
+    with col2:
+        amount_operator = st.selectbox("Amount Condition", ["greater than", "less than", "equals"])
+        amount_value = st.number_input("Amount Value", min_value=0.0)
+        category = st.selectbox("Category", ["Category 1", "Category 2"])  # Will be populated from your categories
+    
+    if st.button("Add Rule"):
+        new_rule = {
+            "vendor_condition": vendor_condition,
+            "vendor_value": vendor_value,
+            "amount_operator": amount_operator,
+            "amount_value": amount_value,
+            "transaction_type": transaction_type,
+            "category": category
         }
+        st.session_state.rules.append(new_rule)
+        st.success("Rule added!")
+
+def apply_rules(df):
+    """Apply classification rules to DataFrame"""
+    classified_mask = pd.Series(False, index=df.index)
+    
+    for rule in st.session_state.rules:
+        mask = pd.Series(True, index=df.index)
+        
+        # Apply vendor condition
+        if rule["vendor_condition"] == "equals":
+            mask &= df["Description"] == rule["vendor_value"]
+        else:
+            mask &= df["Description"].str.contains(rule["vendor_value"], case=False)
+        
+        # Apply amount condition if amount column exists
+        if "Amount" in df.columns:
+            if rule["amount_operator"] == "greater than":
+                mask &= df["Amount"] > rule["amount_value"]
+            elif rule["amount_operator"] == "less than":
+                mask &= df["Amount"] < rule["amount_value"]
+            else:
+                mask &= df["Amount"] == rule["amount_value"]
+        
+        # Apply transaction type
+        mask &= df["Credit/Debit"] == rule["transaction_type"]
+        
+        # Update matching rows
+        df.loc[mask & ~classified_mask, "Category"] = rule["category"]
+        classified_mask |= mask
+    
+    return df
 
 def main():
     st.title("Bank Statement Classifier")
     
-    uploaded_file = st.file_uploader("Upload an Excel or CSV file", type=["xlsx", "csv"])
+    uploaded_file = st.file_uploader("Upload Excel/CSV", type=["xlsx", "csv"])
     
     if uploaded_file:
-        try:
-            # Read and display file preview
-            df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_excel(uploaded_file)
-            st.write("File Preview:")
-            st.write(df.head())
-            
-            # Verify required columns
-            required_cols = ['Description', 'Credit/Debit']
-            missing_cols = [col for col in required_cols if col not in df.columns]
-            if missing_cols:
-                st.error(f"Missing required columns: {missing_cols}")
-                return
-            
-            if st.button("Process Transactions"):
-                progress_bar = st.progress(0)
-                status_text = st.empty()
+        df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+        st.write("Preview:", df.head())
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("Process with AI"):
+                progress = st.progress(0)
                 
-                results = []
                 for idx, row in df.iterrows():
-                    status_text.text(f"Processing transaction {idx + 1}/{len(df)}")
-                    result = classify_transaction(row)
-                    results.append(result)
-                    progress_bar.progress((idx + 1) / len(df))
+                    result = process_with_ai(row)
+                    st.session_state.ai_results.append(result)
+                    progress.progress((idx + 1) / len(df))
                 
                 # Update DataFrame
-                df["Vendor/Customer"] = [res.get("Vendor/Customer", "") for res in results]
-                df["Category"] = [res.get("Category", "") for res in results]
-                df["Explanation"] = [res.get("Explanation", "") for res in results]
+                df["Vendor/Customer"] = [res.get("Vendor/Customer", "") for res in st.session_state.ai_results]
+                df["Category"] = [res.get("Category", "") for res in st.session_state.ai_results]
+                st.session_state.processed_df = df
                 
-                status_text.text("Processing complete!")
-                st.write("Results:")
-                st.write(df)
+                st.success("AI Processing Complete!")
+                st.write("Results:", df)
                 
-                # Add download button
-                output = BytesIO()
-                df.to_excel(output, index=False)
-                output.seek(0)
-                st.download_button(
-                    label="Download Processed File",
-                    data=output,
-                    file_name="classified_transactions.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+                if st.button("Approve AI Classifications"):
+                    for _, row in df.iterrows():
+                        push_to_es(row["Description"], row["Vendor/Customer"], row["Category"])
+                    st.success("Classifications approved and stored!")
+        
+        with col2:
+            if st.button("Write Rules"):
+                create_rule_ui()
                 
-        except Exception as e:
-            st.error(f"Error processing file: {str(e)}")
+                if st.session_state.rules:
+                    st.write("Current Rules:", st.session_state.rules)
+                    
+                    if st.button("Apply Rules"):
+                        df = apply_rules(df)
+                        st.write("Results after rules:", df)
+                        
+                        if st.button("Approve Rule Classifications"):
+                            for _, row in df.iterrows():
+                                push_to_es(row["Description"], row["Vendor/Customer"], row["Category"])
+                            st.success("Rule classifications approved and stored!")
 
 if __name__ == "__main__":
     main()
