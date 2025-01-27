@@ -1,13 +1,11 @@
 import streamlit as st
 import pandas as pd
-from groq import Groq
 from io import BytesIO
 from openai import OpenAI
 import json
 from elasticsearch import Elasticsearch
 
-# Initialize the API clients with secrets
-groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+# Initialize OpenAI client
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # Initialize Elasticsearch
@@ -15,6 +13,15 @@ ELASTIC_URL = "https://elastic:NuwRaaWUktq5FM1QJZe6iexV@my-deployment-3eafc9.es.
 INDEX_NAME = "accounting_classification"
 es = Elasticsearch(ELASTIC_URL)
 
+def create_system_prompt():
+    return """You are an expert accountant responsible for accurately categorizing bank transactions and extracting vendor/customer names according to strict criteria. 
+    For each transaction, provide a JSON output in the following format:
+    {
+        "Vendor/Customer": "<Extracted name or entity involved in the transaction>",
+        "Category": "<One category from the strictly defined list>",
+        "Explanation": "<Brief reasoning for the chosen category based on the description, Cr/Dr indicator, and narration if provided>"
+    }
+    Ensure that your response includes only the JSON output without any accompanying text."""
 
 # Define the user prompt
 def create_user_prompt(description, cr_dr_indicator, narration=None):
@@ -177,99 +184,146 @@ def create_user_prompt(description, cr_dr_indicator, narration=None):
 
 
 def push_to_es(unique_id, vendor, category):
-    payload = {
-        "unique_id": unique_id,
-        "Vendor/Customer": vendor,
-        "Category": category
-    }
     try:
+        payload = {
+            "unique_id": unique_id,
+            "Vendor/Customer": vendor,
+            "Category": category
+        }
         response = es.index(index=INDEX_NAME, document=payload)
         return response
     except Exception as e:
-        return {"error": str(e)}
+        st.error(f"Elasticsearch error: {str(e)}")
+        return None
 
 def search_in_es(vendor):
-    query = {
-        "query": {
-            "match": {"Vendor/Customer": vendor}
-        }
-    }
     try:
+        query = {
+            "query": {
+                "match": {
+                    "Vendor/Customer": vendor
+                }
+            }
+        }
         response = es.search(index=INDEX_NAME, body=query)
         if response["hits"]["hits"]:
             return response["hits"]["hits"][0]["_source"]["Category"]
     except Exception as e:
-        return None
+        st.error(f"Elasticsearch search error: {str(e)}")
     return None
 
-def classify_transaction(row, with_narration, model):
-    system_prompt = """
-    You are an expert accountant responsible for accurately categorizing bank transactions and extracting vendor/customer names according to strict criteria. 
-    For each transaction, provide a JSON output in the following format:
-    {
-        "Vendor/Customer": "<Extracted name or entity involved in the transaction>",
-        "Category": "<One category from the strictly defined list>",
-        "Explanation": "<Brief reasoning for the chosen category based on the description, Cr/Dr indicator, and narration if provided>"
-    }
-    Ensure that your response includes only the JSON output without any accompanying text.
-    """
-    vendor = row['Description']  # Using Description as Vendor reference
-    
-    existing_category = search_in_es(vendor)
-    if existing_category:
-        return {"Vendor/Customer": vendor, "Category": existing_category, "Explanation": "Retrieved from database"}
-    
-    user_prompt = create_user_prompt(row['Description'], row['Credit/Debit'], 
-                                   row.get('Narration') if with_narration else None)
-    
-    if model == "LLAMA 70B (Groq)":
-        completion = groq_client.chat.completions.create(
-            model="llama3-70b-8192",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.13,
-            max_tokens=8000
+def classify_transaction(row, with_narration=False):
+    try:
+        system_prompt = create_system_prompt()
+        vendor = row['Description']
+        
+        # Check existing classification
+        existing_category = search_in_es(vendor)
+        if existing_category:
+            return {
+                "Vendor/Customer": vendor,
+                "Category": existing_category,
+                "Explanation": "Retrieved from database"
+            }
+        
+        user_prompt = create_user_prompt(
+            row['Description'],
+            row['Credit/Debit'],
+            row.get('Narration') if with_narration else None
         )
-        raw_content = completion.choices[0].message.content
-    else:
+        
+        # Make API call to GPT-4-mini
         response = client.chat.completions.create(
-            model="gpt-4o" if model == "GPT4-o (OpenAI)" else "gpt-4o-mini",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            temperature=0.13,
+            temperature=0.1,
             max_tokens=2000
         )
+        
         raw_content = response.choices[0].message.content
-    
-    try:
+        
+        # Debug: Print raw response
+        st.write(f"Raw response for {vendor}:", raw_content)
+        
+        # Clean and parse JSON
+        raw_content = raw_content.strip()
+        if not raw_content.startswith('{'):
+            start_idx = raw_content.find('{')
+            end_idx = raw_content.rfind('}')
+            if start_idx != -1 and end_idx != -1:
+                raw_content = raw_content[start_idx:end_idx + 1]
+        
         json_content = json.loads(raw_content)
-        push_to_es(row["Description"], json_content["Vendor/Customer"], json_content["Category"])
+        
+        # Store in Elasticsearch
+        if json_content.get("Category"):
+            push_to_es(row["Description"], json_content["Vendor/Customer"], json_content["Category"])
+        
         return json_content
+    
     except Exception as e:
-        st.error(f"Error processing response: {e}")
-        return {"Vendor/Customer": "", "Category": "", "Explanation": ""}
+        st.error(f"Error processing transaction: {str(e)}")
+        return {
+            "Vendor/Customer": vendor if 'vendor' in locals() else "Error",
+            "Category": "Processing Error",
+            "Explanation": f"Error: {str(e)}"
+        }
 
 def main():
-    st.title("Bank Statement Classifier with Elasticsearch Caching")
+    st.title("Bank Statement Classifier")
     
     uploaded_file = st.file_uploader("Upload an Excel or CSV file", type=["xlsx", "csv"])
     
     if uploaded_file:
-        df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_excel(uploaded_file)
-        
-        if st.button("Start Processing"):
-            results = []
-            for _, row in df.iterrows():
-                result = classify_transaction(row, False, "GPT4-o (OpenAI)")
-                results.append(result)
+        try:
+            # Read and display file preview
+            df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_excel(uploaded_file)
+            st.write("File Preview:")
+            st.write(df.head())
             
-            df["Vendor/Customer"] = [res.get("Vendor/Customer", "") for res in results]
-            df["Category"] = [res.get("Category", "") for res in results]
-            st.write(df)
+            # Verify required columns
+            required_cols = ['Description', 'Credit/Debit']
+            missing_cols = [col for col in required_cols if col not in df.columns]
+            if missing_cols:
+                st.error(f"Missing required columns: {missing_cols}")
+                return
+            
+            if st.button("Process Transactions"):
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                results = []
+                for idx, row in df.iterrows():
+                    status_text.text(f"Processing transaction {idx + 1}/{len(df)}")
+                    result = classify_transaction(row)
+                    results.append(result)
+                    progress_bar.progress((idx + 1) / len(df))
+                
+                # Update DataFrame
+                df["Vendor/Customer"] = [res.get("Vendor/Customer", "") for res in results]
+                df["Category"] = [res.get("Category", "") for res in results]
+                df["Explanation"] = [res.get("Explanation", "") for res in results]
+                
+                status_text.text("Processing complete!")
+                st.write("Results:")
+                st.write(df)
+                
+                # Add download button
+                output = BytesIO()
+                df.to_excel(output, index=False)
+                output.seek(0)
+                st.download_button(
+                    label="Download Processed File",
+                    data=output,
+                    file_name="classified_transactions.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+                
+        except Exception as e:
+            st.error(f"Error processing file: {str(e)}")
 
 if __name__ == "__main__":
     main()
