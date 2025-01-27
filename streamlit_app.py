@@ -213,6 +213,8 @@ def search_in_es(vendor):
     except Exception as e:
         return None
     return None
+system_prompt = create_system_prompt()
+
 
 def classify_transaction(row, with_narration, model):
     vendor = row['Description']  # Using Description as Vendor reference
@@ -224,7 +226,7 @@ def classify_transaction(row, with_narration, model):
         completion = groq_client.chat.completions.create(
             model="llama3-70b-8192",
             messages=[
-                {"role": "system", "content": create_system_prompt()},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": create_user_prompt(row['Description'], row['Credit/Debit'], row.get('Narration') if with_narration else None)}
             ],
             temperature=0.13,
