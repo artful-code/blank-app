@@ -15,17 +15,6 @@ ELASTIC_URL = "https://elastic:NuwRaaWUktq5FM1QJZe6iexV@my-deployment-3eafc9.es.
 INDEX_NAME = "accounting_classification"
 es = Elasticsearch(ELASTIC_URL)
 
-def create_system_prompt():
-    return """
-    You are an expert accountant responsible for accurately categorizing bank transactions and extracting vendor/customer names according to strict criteria. 
-    For each transaction, provide a JSON output in the following format:
-    {
-        "Vendor/Customer": "<Extracted name or entity involved in the transaction>",
-        "Category": "<One category from the strictly defined list>",
-        "Explanation": "<Brief reasoning for the chosen category based on the description, Cr/Dr indicator, and narration if provided>"
-    }
-    Ensure that your response includes only the JSON output without any accompanying text.
-    """
 
 # Define the user prompt
 def create_user_prompt(description, cr_dr_indicator, narration=None):
@@ -214,7 +203,16 @@ def search_in_es(vendor):
     return None
 
 def classify_transaction(row, with_narration, model):
-    system_prompt = create_system_prompt()  # Create the system prompt here
+    system_prompt = """
+    You are an expert accountant responsible for accurately categorizing bank transactions and extracting vendor/customer names according to strict criteria. 
+    For each transaction, provide a JSON output in the following format:
+    {
+        "Vendor/Customer": "<Extracted name or entity involved in the transaction>",
+        "Category": "<One category from the strictly defined list>",
+        "Explanation": "<Brief reasoning for the chosen category based on the description, Cr/Dr indicator, and narration if provided>"
+    }
+    Ensure that your response includes only the JSON output without any accompanying text.
+    """
     vendor = row['Description']  # Using Description as Vendor reference
     
     existing_category = search_in_es(vendor)
