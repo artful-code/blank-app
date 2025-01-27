@@ -19,13 +19,11 @@ def create_system_prompt():
     return """
     You are an expert accountant responsible for accurately categorizing bank transactions and extracting vendor/customer names according to strict criteria. 
     For each transaction, provide a JSON output in the following format:
-
     {
         "Vendor/Customer": "<Extracted name or entity involved in the transaction>",
         "Category": "<One category from the strictly defined list>",
         "Explanation": "<Brief reasoning for the chosen category based on the description, Cr/Dr indicator, and narration if provided>"
     }
-
     Ensure that your response includes only the JSON output without any accompanying text.
     """
 
@@ -216,13 +214,15 @@ def search_in_es(vendor):
     return None
 
 def classify_transaction(row, with_narration, model):
-    system_prompt = create_system_prompt()
+    system_prompt = create_system_prompt()  # Create the system prompt here
     vendor = row['Description']  # Using Description as Vendor reference
+    
     existing_category = search_in_es(vendor)
     if existing_category:
         return {"Vendor/Customer": vendor, "Category": existing_category, "Explanation": "Retrieved from database"}
     
-    user_prompt = create_user_prompt(row['Description'], row['Credit/Debit'], row.get('Narration') if with_narration else None)
+    user_prompt = create_user_prompt(row['Description'], row['Credit/Debit'], 
+                                   row.get('Narration') if with_narration else None)
     
     if model == "LLAMA 70B (Groq)":
         completion = groq_client.chat.completions.create(
@@ -257,11 +257,18 @@ def classify_transaction(row, with_narration, model):
 
 def main():
     st.title("Bank Statement Classifier with Elasticsearch Caching")
+    
     uploaded_file = st.file_uploader("Upload an Excel or CSV file", type=["xlsx", "csv"])
+    
     if uploaded_file:
         df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_excel(uploaded_file)
+        
         if st.button("Start Processing"):
-            results = [classify_transaction(row, False, "GPT4-o (OpenAI)") for _, row in df.iterrows()]
+            results = []
+            for _, row in df.iterrows():
+                result = classify_transaction(row, False, "GPT4-o (OpenAI)")
+                results.append(result)
+            
             df["Vendor/Customer"] = [res.get("Vendor/Customer", "") for res in results]
             df["Category"] = [res.get("Category", "") for res in results]
             st.write(df)
