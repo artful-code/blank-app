@@ -73,6 +73,34 @@ def search_in_es(vendor):
         st.error(f"Elasticsearch search error: {str(e)}")
     return None
 
+def create_system_prompt():
+    return """You are an expert accountant responsible for accurately categorizing bank transactions and extracting vendor/customer names according to strict criteria. 
+    For each transaction, provide a JSON output in the following format:
+    {
+        "Vendor/Customer": "<Extracted name or entity involved in the transaction>",
+        "Category": "<One category from the strictly defined list>",
+        "Explanation": "<Brief reasoning for the chosen category based on the description, Cr/Dr indicator, and narration if provided>"
+    }
+    
+    For Vendor/Customer extraction:
+    1. Extract the actual business or individual name from the transaction description
+    2. Remove any transaction-related text, dates, or reference numbers
+    3. If no clear vendor/customer name can be found, use the most relevant entity name from the description
+    4. Do not use 'Unknown' or 'Not specified' - extract the best possible name
+    
+    For Category selection:
+    1. Choose only from the provided category list
+    2. Match the category based on transaction nature and Credit/Debit indicator
+    3. Consider both the description and the transaction type for categorization
+    4. If uncertain, choose the most appropriate category based on available information
+    
+    For Explanation:
+    1. Provide a brief, clear reason for the category selection
+    2. Reference specific parts of the description that led to the categorization
+    3. Include any key indicators that helped determine the category
+    
+    Ensure that your response includes only the JSON output without any accompanying text."""
+
 # Define the user prompt
 def create_user_prompt(description, cr_dr_indicator, narration=None):
     # Define ledger data directly in the function
@@ -234,17 +262,8 @@ def create_user_prompt(description, cr_dr_indicator, narration=None):
 
 
 def process_with_ai(row):
-    """Process single transaction with AI and store in session state"""
     try:
-        system_prompt = """You are an expert accountant responsible for accurately categorizing bank transactions and extracting vendor/customer names according to strict criteria. 
-    For each transaction, provide a JSON output in the following format:
-    {
-        "Vendor/Customer": "<Extracted name or entity involved in the transaction>",
-        "Category": "<One category from the strictly defined list>",
-        "Explanation": "<Brief reasoning for the chosen category based on the description, Cr/Dr indicator, and narration if provided>"
-    }
-    Ensure that your response includes only the JSON output without any accompanying text."""
-        
+        system_prompt = create_system_prompt()
         user_prompt = create_user_prompt(
             description=row['Description'],
             cr_dr_indicator=row['Credit/Debit'],
@@ -262,18 +281,18 @@ def process_with_ai(row):
         )
         
         content = response.choices[0].message.content.strip()
-        json_content = json.loads(content)
+        # Clean the JSON string
+        content = content.replace('\n', ' ').strip()
+        if not content.startswith('{'):
+            start_idx = content.find('{')
+            end_idx = content.rfind('}') + 1
+            if start_idx != -1 and end_idx != 0:
+                content = content[start_idx:end_idx]
         
-        # Store vendor in unique vendors set
-        if is_valid_vendor(json_content.get("Vendor/Customer")):
-            st.session_state.unique_vendors.add(json_content["Vendor/Customer"])
-            
-        return json_content
+        return json.loads(content)
         
     except Exception as e:
-        st.error(f"AI Processing error: {str(e)}")
-        return {"Vendor/Customer": "", "Category": "", "Explanation": str(e)}
-
+        raise Exception(f"AI Processing error: {str(e)}")
 def create_rule_ui():
     """Create UI for rule-based classification"""
     st.subheader("Create Classification Rule")
@@ -303,23 +322,21 @@ def create_rule_ui():
         st.success("Rule added!")
 
 def apply_rules(df):
-    """Apply classification rules to DataFrame"""
-    classified_mask = pd.Series(False, index=df.index)
-    
+    df = df.copy()
     for rule in st.session_state.rules:
         mask = pd.Series(True, index=df.index)
         
         # Apply vendor condition
         if rule["vendor_condition"] == "equals":
-            mask &= df["Description"] == rule["vendor_value"]
+            mask &= df["Extracted_Vendor"] == rule["vendor_value"]
         else:
-            mask &= df["Description"].str.contains(rule["vendor_value"], case=False)
+            mask &= df["Extracted_Vendor"].str.contains(rule["vendor_value"], case=False, na=False)
         
-        # Apply amount condition if amount column exists
-        if "Amount" in df.columns:
-            if rule["amount_operator"] == "greater than":
+        # Apply amount condition if exists
+        if "amount_condition" in rule and "Amount" in df.columns:
+            if rule["amount_condition"] == "greater than":
                 mask &= df["Amount"] > rule["amount_value"]
-            elif rule["amount_operator"] == "less than":
+            elif rule["amount_condition"] == "less than":
                 mask &= df["Amount"] < rule["amount_value"]
             else:
                 mask &= df["Amount"] == rule["amount_value"]
@@ -328,59 +345,138 @@ def apply_rules(df):
         mask &= df["Credit/Debit"] == rule["transaction_type"]
         
         # Update matching rows
-        df.loc[mask & ~classified_mask, "Category"] = rule["category"]
-        classified_mask |= mask
+        df.loc[mask, "Category"] = rule["category"]
     
     return df
 
 def main():
     st.title("Bank Statement Classifier")
     
+    if 'df' not in st.session_state:
+        st.session_state.df = None
+    if 'rules' not in st.session_state:
+        st.session_state.rules = []
+    if 'unique_vendors' not in st.session_state:
+        st.session_state.unique_vendors = set()
+    if 'processed_results' not in st.session_state:
+        st.session_state.processed_results = []
+
     uploaded_file = st.file_uploader("Upload Excel/CSV", type=["xlsx", "csv"])
     
     if uploaded_file:
-        df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
-        st.write("Preview:", df.head())
+        # Read the file if it's newly uploaded
+        if st.session_state.df is None:
+            df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+            
+            # Process with AI immediately
+            st.write("Processing with AI...")
+            progress = st.progress(0)
+            results = []
+            
+            for idx, row in df.iterrows():
+                try:
+                    result = process_with_ai(row)
+                    results.append(result)
+                    progress.progress((idx + 1) / len(df))
+                except Exception as e:
+                    st.error(f"Error processing row {idx}: {str(e)}")
+                    results.append({"Vendor/Customer": "Error", "Category": "Error", "Explanation": str(e)})
+            
+            # Update DataFrame with results
+            df["Extracted_Vendor"] = [res.get("Vendor/Customer", "") for res in results]
+            df["Suggested_Category"] = [res.get("Category", "") for res in results]
+            
+            # Store in session state
+            st.session_state.df = df
+            st.session_state.processed_results = results
+            st.session_state.unique_vendors = set(df["Extracted_Vendor"].dropna().unique())
         
+        # Display preview
+        st.subheader("Transaction Preview")
+        preview_df = st.session_state.df[["Description", "Credit/Debit", "Extracted_Vendor", "Amount", "Suggested_Category"]].copy()
+        st.dataframe(preview_df)
+        
+        # Rule Creation Interface
+        st.subheader("Create Classification Rules")
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("Process with AI"):
-                progress = st.progress(0)
-                
-                for idx, row in df.iterrows():
-                    result = process_with_ai(row)
-                    st.session_state.ai_results.append(result)
-                    progress.progress((idx + 1) / len(df))
-                
-                # Update DataFrame
-                df["Vendor/Customer"] = [res.get("Vendor/Customer", "") for res in st.session_state.ai_results]
-                df["Category"] = [res.get("Category", "") for res in st.session_state.ai_results]
-                st.session_state.processed_df = df
-                
-                st.success("AI Processing Complete!")
-                st.write("Results:", df)
-                
-                if st.button("Approve AI Classifications"):
-                    for _, row in df.iterrows():
-                        push_to_es(row["Description"], row["Vendor/Customer"], row["Category"])
-                    st.success("Classifications approved and stored!")
+            vendor_condition = st.selectbox(
+                "Vendor Name Condition", 
+                ["equals", "contains"],
+                key="vendor_condition"
+            )
+            vendor_value = st.selectbox(
+                "Select Vendor",
+                sorted(list(st.session_state.unique_vendors)),
+                key="vendor_value"
+            )
         
         with col2:
-            if st.button("Write Rules"):
-                create_rule_ui()
-                
-                if st.session_state.rules:
-                    st.write("Current Rules:", st.session_state.rules)
-                    
-                    if st.button("Apply Rules"):
-                        df = apply_rules(df)
-                        st.write("Results after rules:", df)
-                        
-                        if st.button("Approve Rule Classifications"):
-                            for _, row in df.iterrows():
-                                push_to_es(row["Description"], row["Vendor/Customer"], row["Category"])
-                            st.success("Rule classifications approved and stored!")
+            if "Amount" in st.session_state.df.columns:
+                amount_condition = st.selectbox(
+                    "Amount Condition",
+                    ["greater than", "less than", "equals"],
+                    key="amount_condition"
+                )
+                amount_value = st.number_input(
+                    "Amount Value",
+                    min_value=0.0,
+                    key="amount_value"
+                )
+            
+            transaction_type = st.selectbox(
+                "Transaction Type",
+                ["Credit", "Debit"],
+                key="transaction_type"
+            )
+        
+        # Get categories based on transaction type
+        categories = get_categories_for_type(transaction_type)
+        category = st.selectbox("Select Category", categories, key="category")
+        
+        if st.button("Add Rule"):
+            new_rule = {
+                "vendor_condition": vendor_condition,
+                "vendor_value": vendor_value,
+                "transaction_type": transaction_type,
+                "category": category
+            }
+            if "Amount" in st.session_state.df.columns:
+                new_rule.update({
+                    "amount_condition": amount_condition,
+                    "amount_value": amount_value
+                })
+            st.session_state.rules.append(new_rule)
+        
+        # Display current rules
+        if st.session_state.rules:
+            st.subheader("Current Rules")
+            for i, rule in enumerate(st.session_state.rules):
+                st.write(f"Rule {i+1}:", rule)
+        
+        # Apply Rules button
+        if st.session_state.rules and st.button("Apply Rules"):
+            df_rules = apply_rules(st.session_state.df)
+            st.write("Results after applying rules:", df_rules)
+            
+            if st.button("Approve Rule Classifications"):
+                for _, row in df_rules.iterrows():
+                    if row["Category"] != row["Suggested_Category"]:  # Only update changed categories
+                        push_to_es(row["Description"], row["Extracted_Vendor"], row["Category"])
+                st.success("Rule classifications approved and stored!")
+
+def get_categories_for_type(transaction_type):
+    """Get categories based on transaction type from ledger data"""
+    ledger_data = {
+        "Credit": {
+            # Your existing Credit categories
+        },
+        "Debit": {
+            # Your existing Debit categories
+        }
+    }
+    return sorted(ledger_data.get(transaction_type, {}).keys())
 
 if __name__ == "__main__":
     main()
