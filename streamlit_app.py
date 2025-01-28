@@ -555,7 +555,7 @@ def main():
                 categories = get_categories_for_type(transaction_type)
                 category = st.selectbox("Select Category", categories, key="category")
                 
-                if st.button("Add Rule"):
+                if st.button("Add Rule", key="add_rule_button"):
                     new_rule = {
                         "vendor_condition": vendor_condition,
                         "vendor_value": vendor_value,
@@ -571,8 +571,9 @@ def main():
                     st.subheader("Current Rules")
                     for i, rule in enumerate(st.session_state.rules):
                         st.write(f"Rule {i+1}:", rule)
-                    
-                    if st.button("Apply Rules"):
+                        
+                    # Rules application section
+                    if st.button("Apply Rules", key="apply_rules_button"):
                         with st.spinner("Applying rules..."):
                             classified_df, matched_mask = apply_rules(st.session_state.remaining_df)
                             
@@ -589,7 +590,7 @@ def main():
                                 
                                 col1, col2 = st.columns(2)
                                 with col1:
-                                    if st.button("Approve Rule Classifications"):
+                                    if st.button("Approve Rule Classifications", key="approve_rules_button"):
                                         for _, row in matched_transactions.iterrows():
                                             push_to_es(row["Description"], row["Extracted_Vendor"], row["Category"])
                                         st.success("Rule classifications saved to database!")
@@ -597,7 +598,7 @@ def main():
                                 
                                 with col2:
                                     if len(remaining_transactions) > 0:
-                                        if st.button("Process Remaining with AI"):
+                                        if st.button("Process Remaining with AI", key="process_remaining_button"):
                                             remaining_transactions['Category'] = remaining_transactions['AI_Category']
                                             st.session_state.remaining_df = remaining_transactions
                                             st.write("AI Classifications:")
@@ -615,7 +616,7 @@ def main():
                     st.write("AI Classifications:")
                     st.dataframe(st.session_state.remaining_df[['Description', 'Credit/Debit', 'Extracted_Vendor', 'Amount', 'Category']])
                     
-                    if st.button("Approve AI Classifications"):
+                    if st.button("Approve AI Classifications", key="approve_ai_button"):
                         for _, row in st.session_state.remaining_df.iterrows():
                             push_to_es(row["Description"], row["Extracted_Vendor"], row["Category"])
                         st.success("AI classifications saved to database!")
@@ -632,7 +633,8 @@ def main():
                 label="Download Processed File",
                 data=output,
                 file_name="classified_transactions.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_button"
             )
 
 if __name__ == "__main__":
