@@ -411,38 +411,7 @@ def apply_rules(df):
     
     return df, classified_mask
 
-# In the main function, replace the rules application section with:
-if st.button("Apply Rules"):
-    with st.spinner("Applying rules..."):
-        classified_df, matched_mask = apply_rules(st.session_state.remaining_df)
-        
-        if matched_mask.any():
-            st.subheader("Matched Transactions:")
-            matched_transactions = classified_df[matched_mask]
-            st.dataframe(matched_transactions[['Description', 'Credit/Debit', 'Extracted_Vendor', 'Amount', 'Category']])
-            st.success(f"{len(matched_transactions)} transactions classified by rules")
-            
-            remaining_transactions = classified_df[~matched_mask]
-            if len(remaining_transactions) > 0:
-                st.subheader(f"Remaining Transactions ({len(remaining_transactions)})")
-                st.dataframe(remaining_transactions[['Description', 'Credit/Debit', 'Extracted_Vendor', 'Amount', 'AI_Category']])
-            
-            if st.button("Approve Rule Classifications"):
-                for _, row in matched_transactions.iterrows():
-                    push_to_es(row["Description"], row["Extracted_Vendor"], row["Category"])
-                st.success("Rule classifications saved to database!")
-                
-                # Update session state with remaining transactions
-                st.session_state.remaining_df = remaining_transactions
-                
-                if len(remaining_transactions) > 0:
-                    st.info(f"{len(remaining_transactions)} transactions remaining")
-                    if st.button("Process Remaining with AI"):
-                        st.session_state.remaining_df['Category'] = st.session_state.remaining_df['AI_Category']
-                        st.write("AI Classifications for Remaining Transactions:")
-                        st.dataframe(st.session_state.remaining_df[['Description', 'Credit/Debit', 'Extracted_Vendor', 'Amount', 'Category']])
-        else:
-            st.warning("No transactions matched the current rules")
+
 def main():
     st.title("Bank Statement Classifier")
     
